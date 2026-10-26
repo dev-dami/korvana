@@ -950,6 +950,10 @@ export class WorldScene extends Phaser.Scene {
       !!academy &&
       Math.hypot((academy.tx + 2) * TILE - px, (academy.ty + 2) * TILE - py) < ACADEMY_MUSIC_RADIUS;
     this.audio.setZone(zoneForBiome(biome, nearAcademy));
+    this.audio.setTimeOfDay(this.state.dayFraction);
+    // The finale's cutscenes carry their own theme over whatever the map says.
+    const finale = this.cutscenes.def?.id;
+    this.audio.holdZone(finale === "ending" || finale === "epilogue" ? "ending" : null, "finale");
     for (const landmark of LANDMARKS) {
       if (this.announcedLandmarks.has(landmark.id)) continue;
       const lx = (landmark.tx + 2) * TILE;

@@ -75,6 +75,10 @@ export class BattleScene extends Phaser.Scene {
     this.menuTexts = [];
     this.pressed.clear();
 
+    // Duel music while this scene lives; releasing the hold lets the world's zone back in.
+    this.world.audio.holdZone(this.encounter.boss ? "boss" : "battle", "duel");
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.world.audio.holdZone(null, "duel"));
+
     const W = viewWidth(this);
     const H = viewHeight(this);
 
