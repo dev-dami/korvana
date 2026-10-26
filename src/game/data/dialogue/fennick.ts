@@ -60,6 +60,11 @@ export const FENNICK_DIALOGUES: Record<string, DialogueTree> = {
             requiresItemCount: { id: "keeper_page", min: 9 },
             next: "pages_done",
           },
+          {
+            text: "Any advice on finding the Keepers' pages?",
+            requiresStage: { quest: "the_nine_pages", stage: "pages" },
+            next: "t_pages",
+          },
           { text: "Could we talk?", next: "talk" },
           { text: "Just browsing.", next: "bye" },
         ],
@@ -245,9 +250,40 @@ export const FENNICK_DIALOGUES: Record<string, DialogueTree> = {
           { text: "Tell me about Vale.", requiresFlag: "vale_glimpsed", next: "t_vale" },
           { text: "You caught Seren Ashdown, didn't you?", requiresQuest: "seren_bargain", next: "t_seren" },
           { text: "I met Brother Hollis.", requiresQuest: "the_undercroft", requiresFlag: "met_hollis", next: "t_hollis" },
-          { text: "How are the pages going?", requiresStage: { quest: "the_nine_pages", stage: "pages" }, next: "t_pages" },
+          {
+            text: "You've kept that shelf shut a long time. Why, really?",
+            tone: "kind",
+            requiresAffinity: { min: 8 },
+            requiresFlag: "undercroft_open",
+            once: true,
+            next: "secret1",
+          },
           { text: "Never mind.", next: "start" },
         ],
+      },
+      secret1: {
+        text: "...You are not supposed to notice that. Students notice the shelf; they do not notice the man in front of it. Very well. Thirty-one years ago my name was on the Headmaster's list. I was to go north. I was twenty-one.",
+        choices: [
+          { text: "What happened?", tone: "curious", next: "secret2" },
+          { text: "You didn't go.", tone: "honest", next: "secret2" },
+        ],
+      },
+      secret2: {
+        text: "I asked to stay. The Headmaster of the day was kinder than the office required, and let me. Somebody else went in my place - a girl from Thornwick who laughed too loudly in the reading room. I have kept the stair shut ever since, so that I would never have to look down it and wonder whether she was still at the bottom.",
+        choices: [
+          { text: "That wasn't cowardice, Master Fennick.", tone: "kind", affinity: 3, next: "secret3" },
+          { text: "Is that why you gave Vale his pass?", tone: "curious", affinity: 1, next: "secret3_vale" },
+        ],
+      },
+      secret3: {
+        text: "It was a little cowardice and a great deal of wanting to live, and I have never been able to separate them. That is the trouble with true things; they so rarely come one at a time. ... Thank you. I have not said that aloud before. It is quieter than I expected.",
+        onEnter: { setFlag: "fennick_secret" },
+        next: "talk",
+      },
+      secret3_vale: {
+        text: "Yes. He asked the question I never had the courage to ask - whether it was right to send anyone at all - and I thought he deserved the books to answer it with. I did not think he would answer it so thoroughly. I suppose I should have.",
+        onEnter: { setFlag: "fennick_secret" },
+        next: "talk",
       },
       t_passes: {
         text: "Because every pass I have issued has been to a student who then went somewhere I could not follow. Ilse went north. A girl called Maren went into the Undercroft and came back a Divination tutor's wife, which I consider worse. Vale went north. I am beginning to suspect the pass.",
@@ -275,7 +311,7 @@ export const FENNICK_DIALOGUES: Record<string, DialogueTree> = {
       },
       t_pages: {
         text: "The pages are in the tombs, three to a tomb if the old catalogues are honest, and they never are. Look in the places a Keeper would hide something from another Keeper: high, behind, and under anything that looks heavy.",
-        next: "talk",
+        next: "start",
       },
 
       post: {

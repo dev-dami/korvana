@@ -20,6 +20,24 @@ export const SEREN_DIALOGUES: Record<string, DialogueTree> = {
       start: {
         redirect: [{ requiresAnyFlag: ["seren_ally", "seren_rival"], next: "hub" }],
         text: "So you're the Lamp's latest. Seren Ashdown. You'll have heard of me, or you will have by teatime. Sit down; the roots are calmer when you're not looming.",
+        variants: [
+          {
+            requiresHouse: "emberhart",
+            text: "So you're the Lamp's latest - and an Emberhart, look at that pin. The old girl's still got taste. Seren Ashdown. Same table, nine years back. Sit down; the roots are calmer when you're not looming.",
+          },
+          {
+            requiresHouse: "thornwick",
+            text: "So you're the Lamp's latest. Thornwick, by the pin. You lot used to leave biscuits on my windowsill when I was in detention, which was always. Seren Ashdown. Sit down; the roots like Thornwicks.",
+          },
+          {
+            requiresHouse: "ravelle",
+            text: "So you're the Lamp's latest. A Ravelle. You're going to ask me a lot of questions I won't answer, and I'm going to enjoy it. Seren Ashdown. Sit down; the roots are calmer when you're not looming.",
+          },
+          {
+            requiresHouse: "stillwater",
+            text: "So you're the Lamp's latest. A Stillwater - you've been standing there a full minute deciding whether I'm dangerous. I am. Seren Ashdown. Sit down; the roots are calmer when you're not looming.",
+          },
+        ],
         choices: [
           { text: "You're the one Vey expelled.", tone: "sharp", next: "expelled" },
           { text: "What are you doing here?", tone: "curious", next: "why_here" },

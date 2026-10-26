@@ -192,7 +192,28 @@ export const CORVIN_DIALOGUES: Record<string, DialogueTree> = {
             text: "He asked me to come north with him. He said I was the only one who ever understood. I think that was true. I think that was the problem. I'd like to understand things without having to follow them into the dark.",
           },
         ],
-        next: "talk",
+        choices: [
+          {
+            text: "Have you ever thought about going north yourself?",
+            tone: "curious",
+            requiresAffinity: { min: 8 },
+            once: true,
+            next: "t_secret",
+          },
+          { text: "Thank you, Corvin.", next: "talk" },
+        ],
+      },
+      t_secret: {
+        text: "...I wrote to the Lamp. Last spring. A proper letter, sealed. I asked it to choose me for the north - for the Keepers - when I'm old enough. I put it under the dais at midnight. In the morning there was a reply in that round hand.",
+        choices: [{ text: "What did it say?", tone: "kind", next: "t_secret2" }],
+      },
+      t_secret2: {
+        text: "'Not yet. Ask the second question first.' ... I have been trying to work out what the second question is for six months. I think it might be 'why do you want to go'. I think the answer might be 'because he did'. I think that might be the wrong answer.",
+        onEnter: { setFlag: "corvin_secret" },
+        choices: [
+          { text: "It's an honest one. That's a start.", tone: "kind", affinity: 3, next: "talk" },
+          { text: "Then keep asking.", tone: "honest", affinity: 2, next: "talk" },
+        ],
       },
       t_treeline: {
         text: "I nearly went. I had my satchel packed. I'd been packing it for a month. And then you said what you said and I - didn't. I am not sure I will ever entirely forgive you. I am quite sure I will always be grateful. Those feel the same, from the inside.",
