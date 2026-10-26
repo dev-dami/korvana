@@ -1,13 +1,24 @@
+import type { MusicZone, SfxName } from "../audio/zones";
+
 type ToneType = OscillatorType;
 
 /** Small procedural audio layer so Korvana has sound without extra asset downloads. */
 export class AudioSystem {
+  private static instance: AudioSystem | null = null;
+
+  /** The one audio engine. Shared by every scene so music survives restarts. */
+  static shared(): AudioSystem {
+    AudioSystem.instance ??= new AudioSystem();
+    return AudioSystem.instance;
+  }
+
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private music: GainNode | null = null;
   private sfx: GainNode | null = null;
   private musicTimer: number | null = null;
   private musicStep = 0;
+  private zone: MusicZone | null = null;
 
   unlock(): void {
     const context = this.ensureContext();
@@ -29,6 +40,36 @@ export class AudioSystem {
     this.music = null;
     this.sfx = null;
     if (context) void context.close();
+  }
+
+  /**
+   * Tells the music where the player is. Cheap to call every frame: it only
+   * acts when the zone actually changes.
+   */
+  setZone(zone: MusicZone): void {
+    this.zone = zone;
+  }
+
+  get currentZone(): MusicZone | null {
+    return this.zone;
+  }
+
+  /** Plays a named one-shot effect. */
+  playSfx(name: SfxName): void {
+    switch (name) {
+      case "relic_fanfare":
+      case "quest_complete":
+      case "level_up":
+        this.playReward();
+        return;
+      case "rumble":
+      case "collapse":
+      case "stone_grind":
+        this.tone(70, 40, 0.6, "sawtooth", 0.1);
+        return;
+      default:
+        this.tone(320, 240, 0.12, "triangle", 0.07);
+    }
   }
 
   playUi(kind: "open" | "select" | "close" | "error"): void {

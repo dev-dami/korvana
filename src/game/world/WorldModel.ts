@@ -13,9 +13,10 @@ const BIOME_GROUND: Record<Biome, GroundTile> = {
   highland: "stone",
   peak: "snow",
   scar: "ash",
+  crypt: "void",
 };
 
-const SOLID_BIOMES: ReadonlySet<Biome> = new Set<Biome>(["ocean", "shallows"]);
+const SOLID_BIOMES: ReadonlySet<Biome> = new Set<Biome>(["ocean", "shallows", "crypt"]);
 
 /**
  * The world model. Pure functions of (tileX, tileY) and the seed — no chunk
@@ -134,7 +135,8 @@ export class WorldModel {
   }
 
   isWater(tx: number, ty: number): boolean {
-    return SOLID_BIOMES.has(this.biomeAt(tx, ty));
+    const biome = this.biomeAt(tx, ty);
+    return biome === "ocean" || biome === "shallows";
   }
 
   /**

@@ -23,6 +23,7 @@ export const GROUND_KINDS: GroundTile[] = [
   "snow",
   "ash",
   "cracked_earth",
+  "void",
 ];
 
 export const GROUND_VARIANTS = 4;
@@ -57,6 +58,7 @@ const GROUND_STYLE: Record<GroundTile, GroundStyle> = {
     light: C.crackedEarthLight,
     kind: "crack",
   },
+  void: { base: "#050507", dark: "#020203", light: "#0b0b10", kind: "dirt" },
 };
 
 function speckle(

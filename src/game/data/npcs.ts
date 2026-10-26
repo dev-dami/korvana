@@ -5,7 +5,9 @@
  */
 export type NpcHome =
   | { kind: "arrival"; dx: number; dy: number }
-  | { kind: "landmark"; id: string; dx: number; dy: number };
+  | { kind: "landmark"; id: string; dx: number; dy: number }
+  /** A named spot from data/spots.ts, for precise placement inside a structure. */
+  | { kind: "spot"; id: string };
 
 export interface NpcDef {
   id: string;

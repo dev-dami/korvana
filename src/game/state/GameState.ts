@@ -2,6 +2,10 @@ import { DAY_LENGTH_MS, WORLD_SEED } from "../config";
 import { STARTING_SPELLS } from "../data/spells";
 import { STARTING_WEAPON } from "../data/weapons";
 
+/** The four Houses of Korvana Academy. See docs/DESIGN.md. */
+export const HOUSE_IDS = ["emberhart", "thornwick", "ravelle", "stillwater"] as const;
+export type HouseId = (typeof HOUSE_IDS)[number];
+
 export interface InventoryEntry {
   id: string;
   qty: number;
@@ -194,6 +198,15 @@ export class GameState {
   }
 
   // --- flags & relationships ---
+
+  /**
+   * The House the Choosing Lamp placed the player in, or null before the
+   * Choosing. Stored as a `house_<id>` flag so it saves like any other flag.
+   */
+  get house(): HouseId | null {
+    for (const id of HOUSE_IDS) if (this.flag(`house_${id}`)) return id;
+    return null;
+  }
 
   flag(id: string): boolean {
     return this.data.flags[id] === true;

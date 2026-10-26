@@ -44,6 +44,7 @@ const PROP_DENSITY: Record<Biome, { oak: number; pine: number; bush: number; roc
   peak: { oak: 0, pine: 0.02, bush: 0, rock: 0.1, dead: 0.02 },
   // Nothing grows in the ash. What stands there is dead and grey.
   scar: { oak: 0, pine: 0, bush: 0.008, rock: 0.07, dead: 0.05 },
+  crypt: { oak: 0, pine: 0, bush: 0, rock: 0, dead: 0 },
 };
 
 const DECAL_DENSITY: Partial<Record<Biome, number>> = {

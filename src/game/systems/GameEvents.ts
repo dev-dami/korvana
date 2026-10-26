@@ -22,7 +22,13 @@ export type GameEventKind =
   | "quest_started"
   | "quest_completed"
   | "lore_found"
-  | "boss_defeated";
+  | "boss_defeated"
+  /** A tomb or vault mechanism was solved. `id` is the puzzle id. */
+  | "puzzle_solved"
+  /** A hidden passage or cache was uncovered. `id` is the secret id. */
+  | "secret_found"
+  /** The player set off a trap. `id` is the trap kind. */
+  | "trap_triggered";
 
 export interface GameEvent {
   kind: GameEventKind;

@@ -55,7 +55,9 @@ export class Actor {
 
   constructor(scene: Phaser.Scene, lookKey: string, x: number, y: number) {
     this.scene = scene;
-    this.lookKey = lookKey;
+    // A look that was never drawn falls back to a plain student rather than
+    // crashing the scene on a missing animation.
+    this.lookKey = scene.textures.exists(sheetKey(lookKey)) ? lookKey : "student";
     this.x = x;
     this.y = y;
 
@@ -66,7 +68,7 @@ export class Actor {
       .setAlpha(0.55);
 
     this.sprite = scene.add
-      .sprite(x, y, sheetKey(lookKey), 0)
+      .sprite(x, y, sheetKey(this.lookKey), 0)
       .setOrigin(0.5, 1)
       .setDepth(y);
 

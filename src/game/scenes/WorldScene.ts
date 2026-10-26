@@ -8,6 +8,7 @@ import type { EnemyArchetype } from "../data/enemies";
 import { LANDMARKS, START_LANDMARK, landmarkById } from "../data/landmarks";
 import type { NpcDef } from "../data/npcs";
 import { NPC_ROSTER } from "../data/npcs";
+import { spotById } from "../data/spots";
 import { STARTING_WEAPON, WEAPONS, WEAPON_ORDER, weaponById } from "../data/weapons";
 import type { SwingKind } from "../data/weapons";
 import type { CutsceneDef } from "../data/cutscenes";
@@ -31,6 +32,8 @@ import { SaveSystem } from "../systems/SaveSystem";
 import { SpellSystem } from "../systems/SpellSystem";
 import { StoryDirector } from "../systems/StoryDirector";
 import { AudioSystem } from "../systems/AudioSystem";
+import { zoneForBiome } from "../audio/zones";
+import { LightRegistry } from "../gfx/lights";
 import type { GameState } from "../state/GameState";
 import { TransitionManager } from "../world/TransitionManager";
 import { WorldManager } from "../world/WorldManager";
@@ -46,6 +49,8 @@ const MOVE_SPEED_WHILE_SWINGING = 0.35;
 const LANDMARK_RADIUS = 190;
 /** Safe pocket for landmarks that do not declare one. */
 const DEFAULT_SAFE_RADIUS = 360;
+/** Within this many pixels of the Academy, the music is the Academy's. */
+const ACADEMY_MUSIC_RADIUS = 900;
 
 /** Shared empty set for frames where nothing was pressed. */
 const NO_INPUT: ReadonlySet<string> = new Set<string>();
@@ -67,6 +72,8 @@ export class WorldScene extends Phaser.Scene {
   player!: Player;
   npcs: NPC[] = [];
   enemies: Enemy[] = [];
+  /** Runtime light sources (braziers, spells, lanterns). See gfx/lights.ts. */
+  readonly lightRegistry = new LightRegistry();
 
   private interaction!: InteractionSystem;
   private effectRunner!: EffectRunner;
@@ -120,6 +127,7 @@ export class WorldScene extends Phaser.Scene {
     this.announcedLandmarks = new Set();
     this.lastBiome = "";
     this.pressed.clear();
+    this.lightRegistry.clear();
     this.spawnTimer = 0;
     this.inventoryOpen = false;
     this.inventoryIndex = 0;
@@ -148,7 +156,7 @@ export class WorldScene extends Phaser.Scene {
     this.cutscenes.onEnd = (def) => this.finishCutscene(def);
 
     this.spells = new SpellSystem(this, this.state, this.world);
-    this.audio = new AudioSystem();
+    this.audio = AudioSystem.shared();
     this.combat = new CombatSystem(this);
 
     this.pickups = new PickupSystem(this, this.state, this.world, this.gameEvents);
@@ -217,7 +225,8 @@ export class WorldScene extends Phaser.Scene {
     this.cutscenes.clear();
     this.gameEvents.clear();
     this.world.destroy();
-    this.audio.destroy();
+    // The audio engine is game-wide and outlives a scene restart, so the music
+    // carries on through a save load rather than cutting out.
   }
 
   update(_time: number, delta: number): void {
@@ -379,12 +388,21 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private npcAnchor(def: NpcDef): { x: number; y: number } | null {
-    if (def.home.kind === "arrival") {
-      // The arrival offsets are authored relative to the player's spawn tile.
+    if (def.home.kind === "spot") {
+      const spot = spotById(def.home.id);
+      const host = spot ? landmarkById(spot.landmark) : undefined;
+      if (!spot || !host) return null;
       return {
-        x: this.state.data.position.x + def.home.dx * TILE,
-        y: this.state.data.position.y + def.home.dy * TILE,
+        x: (host.tx + spot.dx) * TILE + TILE / 2,
+        y: (host.ty + spot.dy) * TILE + TILE,
       };
+    }
+    if (def.home.kind === "arrival") {
+      // Authored relative to the arrival spot in front of the Academy - never
+      // the player's position, or loading a save made in the Scar would bring
+      // the whole faculty along with you.
+      const start = this.startSpot();
+      return { x: start.x + def.home.dx * TILE, y: start.y + def.home.dy * TILE };
     }
     const landmark = landmarkById(def.home.id);
     if (!landmark) return null;
@@ -926,6 +944,12 @@ export class WorldScene extends Phaser.Scene {
 
     const px = this.player.x;
     const py = this.player.y;
+
+    const academy = landmarkById(START_LANDMARK);
+    const nearAcademy =
+      !!academy &&
+      Math.hypot((academy.tx + 2) * TILE - px, (academy.ty + 2) * TILE - py) < ACADEMY_MUSIC_RADIUS;
+    this.audio.setZone(zoneForBiome(biome, nearAcademy));
     for (const landmark of LANDMARKS) {
       if (this.announcedLandmarks.has(landmark.id)) continue;
       const lx = (landmark.tx + 2) * TILE;

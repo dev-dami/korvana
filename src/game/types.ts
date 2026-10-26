@@ -8,7 +8,13 @@ export type Biome =
   | "highland"
   | "peak"
   /** The Moonwell Scar: ash flats blasted out of the north range. */
-  | "scar";
+  | "scar"
+  /**
+   * Underground: tombs, vaults and the Academy's interiors. Built far from the
+   * surface as landmark structures; everything that is not an authored floor
+   * tile is solid, unlit rock.
+   */
+  | "crypt";
 
 export type GroundTile =
   | "deep_water"
@@ -22,7 +28,9 @@ export type GroundTile =
   | "stone"
   | "snow"
   | "ash"
-  | "cracked_earth";
+  | "cracked_earth"
+  /** Solid black rock around underground levels. Never walkable. */
+  | "void";
 
 /** Roles used by structure templates and drawn as their own sprites. */
 export type TileRole = "wall" | "floor" | "door" | "prop" | "torch";
