@@ -103,6 +103,50 @@ export const SPELLS: Record<string, Spell> = {
     damage: 0,
     color: 0xb98ce0,
   },
+
+  // --- Taught by the story ---
+
+  kindlesight: {
+    id: "kindlesight",
+    name: "Kindlesight",
+    description:
+      "The first charm in the Vigil of the Nine: a breath of pale light that shows what is hiding, and burns what hides in the dark for a living.",
+    school: "Divination",
+    kind: "nova",
+    manaCost: 14,
+    cooldown: 1800,
+    range: 150,
+    damage: 12,
+    color: 0xfff1b8,
+  },
+  stilling_word: {
+    id: "stilling_word",
+    name: "Stilling Word",
+    description:
+      "The archivists' hush, taught by Brother Hollis. A slow, heavy syllable that strikes like a closed door. Wraiths hate it.",
+    school: "Abjuration",
+    kind: "projectile",
+    manaCost: 16,
+    cooldown: 1100,
+    range: 380,
+    damage: 24,
+    color: 0xc8b8ff,
+    speed: 340,
+    radius: 22,
+  },
+  keepers_strand: {
+    id: "keepers_strand",
+    name: "Keeper's Strand",
+    description:
+      "Pieced together from nine scattered pages: the Keepers' own ward, a thread of attention wound round the caster. It holds as long as you do.",
+    school: "Abjuration",
+    kind: "ward",
+    manaCost: 20,
+    cooldown: 5200,
+    range: 0,
+    damage: 0,
+    color: 0x9fe0d0,
+  },
 };
 
 /** New students begin untrained; the first lesson grants Arcane Dart. */

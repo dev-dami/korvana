@@ -154,6 +154,13 @@ export class WorldScene extends Phaser.Scene {
     this.dialogue = new DialogueSystem(this.state, this.quests, this.effectRunner, this.outbox);
     this.cutscenes = new CutsceneSystem();
     this.cutscenes.onEnd = (def) => this.finishCutscene(def);
+    // A quest begun while you already stand at its destination should still
+    // notice you are there, so places are announced afresh.
+    this.gameEvents.on((event) => {
+      if (event.kind !== "quest_started") return;
+      this.announcedLandmarks.clear();
+      this.lastBiome = "";
+    });
 
     this.spells = new SpellSystem(this, this.state, this.world);
     this.audio = AudioSystem.shared();
@@ -367,6 +374,7 @@ export class WorldScene extends Phaser.Scene {
 
   private placeNpcs(): void {
     for (const def of NPC_ROSTER) {
+      if (this.npcHidden(def)) continue;
       if (def.requiresFlag && !this.state.flag(def.requiresFlag)) {
         this.pendingNpcs.push(def);
         continue;
@@ -414,13 +422,23 @@ export class WorldScene extends Phaser.Scene {
 
   /** Brings in story characters whose gating flag has since been set. */
   private pollNpcs(dt: number): void {
-    if (this.pendingNpcs.length === 0) return;
     this.npcPollTimer -= dt;
-    if (this.npcPollTimer > 0) return;
+    if (this.npcPollTimer > 0 || this.dialogue.active) return;
     this.npcPollTimer = 1;
+
+    // Characters the story has moved on leave; never mid-conversation.
+    const leaving = this.npcs.filter((npc) =>
+      NPC_ROSTER.some((d) => d.id === npc.id && d.dialogueId === npc.dialogueId && this.npcHidden(d)),
+    );
+    for (const npc of leaving) npc.destroy();
+    if (leaving.length > 0) {
+      this.npcs = this.npcs.filter((npc) => !leaving.includes(npc));
+      this.npcObstacles = [...this.npcs, this.player];
+    }
 
     const stillWaiting: NpcDef[] = [];
     for (const def of this.pendingNpcs) {
+      if (this.npcHidden(def)) continue;
       if (def.requiresFlag && !this.state.flag(def.requiresFlag)) {
         stillWaiting.push(def);
         continue;
@@ -428,6 +446,11 @@ export class WorldScene extends Phaser.Scene {
       this.spawnNpc(def);
     }
     this.pendingNpcs = stillWaiting;
+  }
+
+  private npcHidden(def: NpcDef): boolean {
+    const flags = def.hiddenByFlag === undefined ? [] : [def.hiddenByFlag].flat();
+    return flags.some((flag) => this.state.flag(flag));
   }
 
   /** Spirals outward from a preferred spot until it finds ground an actor fits on. */

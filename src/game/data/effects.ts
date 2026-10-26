@@ -7,6 +7,8 @@
  * one file, and there is exactly one place where story data is allowed to
  * mutate the world.
  */
+import type { HouseId } from "../state/GameState";
+
 export interface Effects {
   /** Starts the quest if the player has not begun it. */
   startQuest?: string;
@@ -26,8 +28,40 @@ export interface Effects {
   learnSpell?: string;
   equipWeapon?: string;
 
+  /** Several items at once - "hand over all three overdue books". */
+  giveItems?: string[];
+  takeItems?: string[];
+
   setFlag?: string;
   clearFlag?: string;
+  setFlags?: string[];
+  clearFlags?: string[];
+
+  /**
+   * Places the player in a House: sets `sorted` and exactly one `house_<id>`
+   * flag, clearing any other. Applied before quest effects, so a quest that
+   * completes on the same choice already sees the House.
+   */
+  setHouse?: HouseId;
+  /**
+   * Weights the Choosing Lamp's verdict. Each answer in the Choosing nudges one
+   * or more Houses; `resolveHouse` reads the tallies back.
+   */
+  houseWeight?: Partial<Record<HouseId, number>>;
+  /**
+   * Sets `lamp_suggests_<id>` for the House with the highest tally (ties go to
+   * whichever tied House the player leaned towards most recently), clearing the other suggestions.
+   */
+  resolveHouse?: boolean;
+
+  /**
+   * Changes how other characters feel about the player, by npc id. Used when a
+   * choice in one conversation would plainly get back to someone else.
+   */
+  affinityWith?: Record<string, number>;
+
+  /** Restores health and mana to full - a breath before a hard fight. */
+  restore?: boolean;
 
   /** Records a journal entry, by id from data/lore.ts. */
   lore?: string;

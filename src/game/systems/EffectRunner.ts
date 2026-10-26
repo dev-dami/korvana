@@ -1,14 +1,23 @@
+import { resolveCutscene } from "../data/cutscenes";
 import { ITEMS } from "../data/items";
+import { npcById } from "../data/npcs";
 import { SPELLS } from "../data/spells";
 import { WEAPONS } from "../data/weapons";
 import type { Effects } from "../data/effects";
 import { landmarkById } from "../data/landmarks";
 import { loreById } from "../data/lore";
-import type { GameState } from "../state/GameState";
+import { HOUSE_IDS } from "../state/GameState";
+import type { GameState, HouseId } from "../state/GameState";
 import { TILE } from "../config";
+import { ConditionChecker } from "./ConditionChecker";
 import type { GameEvents } from "./GameEvents";
 import type { InventorySystem } from "./InventorySystem";
 import type { AdvanceResult, QuestSystem } from "./QuestSystem";
+
+/** Where the Choosing Lamp keeps its running tally, inside the relationship table. */
+export const HOUSE_TALLY_PREFIX = "house_tally_";
+/** The most recent House an answer leaned towards, stored as its HOUSE_IDS index. */
+const HOUSE_TALLY_LAST = "house_tally_last";
 
 /**
  * Somewhere for the story layer to put things the scene has to do.
@@ -60,6 +69,8 @@ export class EffectRunner {
   private readonly events: GameEvents;
   /** Guards against a quest chain that loops back on itself. */
   private depth = 0;
+  /** Shared with dialogue, so a cutscene line and a dialogue choice agree on what a condition means. */
+  readonly conditions: ConditionChecker;
 
   constructor(
     state: GameState,
@@ -71,11 +82,13 @@ export class EffectRunner {
     this.quests = quests;
     this.inventory = inventory;
     this.events = events;
+    this.conditions = new ConditionChecker(state, quests);
   }
 
   /**
-   * Applies the story consequences of a quest moving forward: the entered
-   * stage's `onEnter`, and the quest's `onComplete` if it just finished.
+   * Applies the story consequences of a quest moving forward: any per-step
+   * effects, the entered stage's `onEnter`, and the quest's `onComplete` if it
+   * just finished.
    *
    * Both paths that advance a quest - a game event reaching the StoryDirector,
    * and a dialogue choice calling `advanceQuest` - must come through here.
@@ -83,6 +96,9 @@ export class EffectRunner {
    * its completion effects entirely.
    */
   applyQuestProgress(questId: string, result: AdvanceResult, outbox: StoryOutbox): void {
+    // Per-step effects first (the fourth Keeper page unlocks the fourth
+    // journal entry), then whatever the next stage or completion brings.
+    for (const step of result.progressEffects ?? []) this.run(step, outbox);
     if (result.stage?.onEnter) this.run(result.stage.onEnter, outbox);
 
     if (result.completed) {
@@ -107,6 +123,25 @@ export class EffectRunner {
   }
 
   private apply(effects: Effects, outbox: StoryOutbox): void {
+    // Facts first. A choice that both sets a flag and moves a quest on must
+    // have the flag in place before the next stage's cutscene decides which of
+    // its lines to show.
+    if (effects.setFlag) this.state.setFlag(effects.setFlag);
+    if (effects.clearFlag) this.state.setFlag(effects.clearFlag, false);
+    for (const flag of effects.setFlags ?? []) this.state.setFlag(flag);
+    for (const flag of effects.clearFlags ?? []) this.state.setFlag(flag, false);
+    if (effects.houseWeight) this.weighHouses(effects.houseWeight);
+    if (effects.resolveHouse) this.resolveHouse();
+    if (effects.setHouse) this.setHouse(effects.setHouse);
+    if (effects.affinityWith) {
+      for (const [npc, delta] of Object.entries(effects.affinityWith)) {
+        if (!delta) continue;
+        this.state.adjustRelationship(npc, delta);
+        const name = npcById(npc)?.name ?? npc;
+        outbox.messages.push(`${delta > 0 ? "+" : ""}${delta} with ${name}`);
+      }
+    }
+
     if (effects.startQuest && this.quests.start(effects.startQuest)) {
       const def = this.quests.def(effects.startQuest);
       outbox.messages.push(`Quest started: ${def?.name ?? effects.startQuest}`);
@@ -131,6 +166,8 @@ export class EffectRunner {
       this.applyQuestProgress(effects.completeStage, result, outbox);
     }
 
+    if (effects.completeQuest) this.finishQuest(effects.completeQuest, outbox);
+
     if (effects.giveItem) {
       const qty = effects.giveItemQty ?? 1;
       if (this.inventory.add(effects.giveItem, qty)) {
@@ -144,8 +181,18 @@ export class EffectRunner {
       const qty = effects.takeItemQty ?? 1;
       if (this.inventory.remove(effects.takeItem, qty)) {
         const def = ITEMS[effects.takeItem];
-        outbox.messages.push(`Lost ${def?.name ?? effects.takeItem}${qty > 1 ? ` x${qty}` : ""}.`);
+        outbox.messages.push(`Handed over ${def?.name ?? effects.takeItem}${qty > 1 ? ` x${qty}` : ""}.`);
       }
+    }
+
+    for (const id of effects.giveItems ?? []) this.giveOne(id, outbox);
+    for (const id of effects.takeItems ?? []) {
+      if (this.inventory.remove(id, 1)) outbox.messages.push(`Handed over ${ITEMS[id]?.name ?? id}.`);
+    }
+
+    if (effects.restore) {
+      this.state.player.health = this.state.player.maxHealth;
+      this.state.player.mana = this.state.player.maxMana;
     }
 
     if (effects.gold) {
@@ -163,9 +210,6 @@ export class EffectRunner {
       this.state.equipWeapon(effects.equipWeapon);
       outbox.messages.push(`Wielding the ${WEAPONS[effects.equipWeapon]?.name}.`);
     }
-
-    if (effects.setFlag) this.state.setFlag(effects.setFlag);
-    if (effects.clearFlag) this.state.setFlag(effects.clearFlag, false);
 
     if (effects.lore && this.state.unlockLore(effects.lore)) {
       const entry = loreById(effects.lore);
@@ -187,7 +231,60 @@ export class EffectRunner {
     }
 
     if (effects.battle) outbox.battle = effects.battle;
-    if (effects.cutscene) outbox.cutscenes.push(effects.cutscene);
+    if (effects.cutscene) {
+      // Cutscenes may branch, and their lines may be conditional. Resolve both
+      // now, while the facts that chose them are current.
+      const id = resolveCutscene(effects.cutscene, (c) => this.conditions.check(c));
+      if (id) outbox.cutscenes.push(id);
+    }
     if (effects.toast) outbox.messages.push(effects.toast);
+  }
+
+  private giveOne(id: string, outbox: StoryOutbox): void {
+    if (!this.inventory.add(id, 1)) return;
+    outbox.messages.push(`Received ${ITEMS[id]?.name ?? id}.`);
+    this.events.emit({ kind: "item_gained", id, amount: 1 });
+  }
+
+  /**
+   * Runs a quest to its end, so its rewards and completion effects fire. The
+   * stages skipped on the way do not get their onEnter: when a choice ends a
+   * quest outright, only the ending matters.
+   */
+  private finishQuest(id: string, outbox: StoryOutbox): void {
+    if (!this.quests.has(id) && this.quests.start(id)) {
+      this.events.emit({ kind: "quest_started", id });
+    }
+    for (let guard = 0; guard < 32 && this.quests.isActive(id); guard++) {
+      const result = this.quests.completeStage(id);
+      if (!result.stageChanged) break;
+      if (result.completed) {
+        if (result.reward) outbox.messages.push(result.reward);
+        this.applyQuestProgress(id, result, outbox);
+      }
+    }
+  }
+
+  private weighHouses(weights: Partial<Record<HouseId, number>>): void {
+    for (const house of HOUSE_IDS) {
+      const delta = weights[house];
+      if (!delta) continue;
+      this.state.adjustRelationship(`${HOUSE_TALLY_PREFIX}${house}`, delta);
+      if (delta > 0) this.state.data.relationships[HOUSE_TALLY_LAST] = HOUSE_IDS.indexOf(house);
+    }
+  }
+
+  private resolveHouse(): void {
+    let best: HouseId = HOUSE_IDS[this.state.relationship(HOUSE_TALLY_LAST)] ?? HOUSE_IDS[0];
+    for (const house of HOUSE_IDS) {
+      const score = this.state.relationship(`${HOUSE_TALLY_PREFIX}${house}`);
+      if (score > this.state.relationship(`${HOUSE_TALLY_PREFIX}${best}`)) best = house;
+    }
+    for (const house of HOUSE_IDS) this.state.setFlag(`lamp_suggests_${house}`, house === best);
+  }
+
+  private setHouse(house: HouseId): void {
+    for (const id of HOUSE_IDS) this.state.setFlag(`house_${id}`, id === house);
+    this.state.setFlag("sorted");
   }
 }

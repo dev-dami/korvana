@@ -71,6 +71,7 @@ export class InventorySystem {
       this.state.equipWeapon(id);
       return `You take up the ${def.name}.`;
     }
+    if (def.useText) return def.useText;
     return `${def.name} cannot be used here.`;
   }
 }
