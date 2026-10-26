@@ -236,9 +236,7 @@ export const NPC_ROSTER: NpcDef[] = [
     id: "keeper_ilse",
     name: "Keeper Ilse",
     title: "The Last Keeper",
-    // DESIGN.md allows a dedicated `keeper` look; until one is drawn the
-    // herbologist robes are closer than the student fallback.
-    look: "herbologist",
+    look: "keeper",
     dialogueId: "ilse_main",
     home: { kind: "landmark", id: "keeper_camp", dx: 3, dy: 5 },
     roam: 48,
