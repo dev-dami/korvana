@@ -36,6 +36,7 @@ import { zoneForBiome } from "../audio/zones";
 import { LightRegistry } from "../gfx/lights";
 import { levelMusicAt } from "../data/levels";
 import { MechanismSystem } from "../systems/MechanismSystem";
+import { WorldFx } from "../gfx/WorldFx";
 import type { GameState } from "../state/GameState";
 import { TransitionManager } from "../world/TransitionManager";
 import { WorldManager } from "../world/WorldManager";
@@ -78,6 +79,8 @@ export class WorldScene extends Phaser.Scene {
   readonly lightRegistry = new LightRegistry();
   /** Plates, gates, traps and relics in the Academy and the tombs. */
   mechanisms!: MechanismSystem;
+  /** Lighting, weather, water and combat effects. See gfx/WorldFx.ts. */
+  fx!: WorldFx;
 
   private interaction!: InteractionSystem;
   private effectRunner!: EffectRunner;
@@ -147,6 +150,7 @@ export class WorldScene extends Phaser.Scene {
     const model = new WorldModel(this.state.data.seed);
     this.world = new WorldManager(this, model);
     this.transition = new TransitionManager(this);
+    this.fx = new WorldFx(this);
 
     // Story systems. Order matters: the effect runner needs the quests and the
     // inventory, and the director needs the runner.
@@ -158,6 +162,13 @@ export class WorldScene extends Phaser.Scene {
     this.dialogue = new DialogueSystem(this.state, this.quests, this.effectRunner, this.outbox);
     this.cutscenes = new CutsceneSystem();
     this.cutscenes.onEnd = (def) => this.finishCutscene(def);
+    // A quest begun while you already stand at its destination should still
+    // notice you are there, so places are announced afresh.
+    this.gameEvents.on((event) => {
+      if (event.kind !== "quest_started") return;
+      this.announcedLandmarks.clear();
+      this.lastBiome = "";
+    });
 
     this.spells = new SpellSystem(this, this.state, this.world);
     this.audio = AudioSystem.shared();
@@ -235,6 +246,7 @@ export class WorldScene extends Phaser.Scene {
     this.gameEvents.clear();
     this.mechanisms.destroy();
     this.world.destroy();
+    this.fx.destroy();
     // The audio engine is game-wide and outlives a scene restart, so the music
     // carries on through a save load rather than cutting out.
   }
@@ -267,6 +279,9 @@ export class WorldScene extends Phaser.Scene {
     this.world.update(this.player.x, this.player.y);
     this.combat.update(dt);
 
+    if (pressed.has("mute")) {
+      this.toast(this.audio.toggleMute() ? "Sound off." : "Sound on.");
+    }
     if (pressed.has("debug")) {
       this.debugVisible = !this.debugVisible;
       this.debugText.setVisible(this.debugVisible);
@@ -281,7 +296,9 @@ export class WorldScene extends Phaser.Scene {
     // The player is held still in every non-gameplay branch, otherwise the last
     // walk animation keeps cycling while they stand in a conversation.
     if (this.cutscenes.active) {
-      if (pressed.has("interact") || pressed.has("cast") || pressed.has("confirm")) {
+      if (this.finishTyping(pressed)) {
+        // The line was still being typed: that press only finished it.
+      } else if (pressed.has("interact") || pressed.has("cast") || pressed.has("confirm")) {
         this.cutscenes.advance();
       }
       if (pressed.has("escape")) this.cutscenes.clear();
@@ -338,6 +355,7 @@ export class WorldScene extends Phaser.Scene {
     this.pollNpcs(dt);
     this.trackGeography();
     this.drainOutbox();
+    this.fx.update(dt);
 
     if (this.debugVisible) this.refreshDebug();
   }
@@ -363,9 +381,13 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // Keep the respawn point separate from the loaded position, so a save made
-    // deep in the world does not silently move your home.
-    const start = this.startSpot();
-    this.state.setCheckpoint(start.x, start.y);
+    // deep in the world does not silently move your home. Only a game with no
+    // checkpoint yet gets the Academy: overwriting it here would throw away the
+    // checkpoints the story hands out (Keeper's Rest and the like) on every load.
+    if (!this.state.checkpoint) {
+      const start = this.startSpot();
+      this.state.setCheckpoint(start.x, start.y);
+    }
 
     this.state.data.position = { x: this.homeX, y: this.homeY };
     this.player = new Player(this, this.homeX, this.homeY);
@@ -382,6 +404,7 @@ export class WorldScene extends Phaser.Scene {
 
   private placeNpcs(): void {
     for (const def of NPC_ROSTER) {
+      if (this.npcHidden(def)) continue;
       if (def.requiresFlag && !this.state.flag(def.requiresFlag)) {
         this.pendingNpcs.push(def);
         continue;
@@ -429,13 +452,23 @@ export class WorldScene extends Phaser.Scene {
 
   /** Brings in story characters whose gating flag has since been set. */
   private pollNpcs(dt: number): void {
-    if (this.pendingNpcs.length === 0) return;
     this.npcPollTimer -= dt;
-    if (this.npcPollTimer > 0) return;
+    if (this.npcPollTimer > 0 || this.dialogue.active) return;
     this.npcPollTimer = 1;
+
+    // Characters the story has moved on leave; never mid-conversation.
+    const leaving = this.npcs.filter((npc) =>
+      NPC_ROSTER.some((d) => d.id === npc.id && d.dialogueId === npc.dialogueId && this.npcHidden(d)),
+    );
+    for (const npc of leaving) npc.destroy();
+    if (leaving.length > 0) {
+      this.npcs = this.npcs.filter((npc) => !leaving.includes(npc));
+      this.npcObstacles = [...this.npcs, this.player];
+    }
 
     const stillWaiting: NpcDef[] = [];
     for (const def of this.pendingNpcs) {
+      if (this.npcHidden(def)) continue;
       if (def.requiresFlag && !this.state.flag(def.requiresFlag)) {
         stillWaiting.push(def);
         continue;
@@ -443,6 +476,11 @@ export class WorldScene extends Phaser.Scene {
       this.spawnNpc(def);
     }
     this.pendingNpcs = stillWaiting;
+  }
+
+  private npcHidden(def: NpcDef): boolean {
+    const flags = def.hiddenByFlag === undefined ? [] : [def.hiddenByFlag].flat();
+    return flags.some((flag) => this.state.flag(flag));
   }
 
   /** Spirals outward from a preferred spot until it finds ground an actor fits on. */
@@ -510,6 +548,7 @@ export class WorldScene extends Phaser.Scene {
     bind(C.C, "dash");
     bind(C.BACKTICK, "debug");
     bind(C.ESC, "escape");
+    bind(C.N, "mute");
 
     this.spellKeys = [C.ONE, C.TWO, C.THREE, C.FOUR, C.FIVE, C.SIX].map((code, index) =>
       bind(code, `spell${index}`),
@@ -560,6 +599,7 @@ export class WorldScene extends Phaser.Scene {
       this.dialogue.end();
       return;
     }
+    if (this.finishTyping(pressed)) return;
 
     const choices = this.dialogue.choices();
     if (choices.length === 0) {
@@ -574,6 +614,13 @@ export class WorldScene extends Phaser.Scene {
       this.dialogue.choose(i);
       return;
     }
+  }
+
+  /** While the UI is typing a line out, a press finishes it instead of acting. */
+  private finishTyping(pressed: ReadonlySet<string>): boolean {
+    if (pressed.size === 0 || pressed.has("escape") || !this.registry.get("ui:typing")) return false;
+    this.game.events.emit("korvana:finish-typing");
+    return true;
   }
 
   // --- inventory & journal ----------------------------------------------
@@ -711,6 +758,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.mechanisms.onMelee();
     const heavy = kind === "heavy";
+    this.player.strikePose("attack", heavy ? 300 : 200);
     this.audio.playAttack(heavy, outcome.hits > 0);
     calloutText(
       this,
@@ -907,6 +955,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    this.player.strikePose("cast", 260);
     this.audio.playSpell(SPELLS[spellId]?.kind);
     this.mechanisms.onSpellCast(spellId);
     this.story.report({ kind: "spell_cast", id: spellId });
@@ -968,6 +1017,10 @@ export class WorldScene extends Phaser.Scene {
       !!academy &&
       Math.hypot((academy.tx + 2) * TILE - px, (academy.ty + 2) * TILE - py) < ACADEMY_MUSIC_RADIUS;
     this.audio.setZone(levelMusicAt(px, py) ?? zoneForBiome(biome, nearAcademy));
+    this.audio.setTimeOfDay(this.state.dayFraction);
+    // The finale's cutscenes carry their own theme over whatever the map says.
+    const finale = this.cutscenes.def?.id;
+    this.audio.holdZone(finale === "ending" || finale === "epilogue" ? "ending" : null, "finale");
     for (const landmark of LANDMARKS) {
       if (this.announcedLandmarks.has(landmark.id)) continue;
       const lx = (landmark.tx + 2) * TILE;

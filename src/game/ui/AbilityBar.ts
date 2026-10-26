@@ -1,203 +1,216 @@
-import type Phaser from "phaser";
+import Phaser from "phaser";
 
 import { SPELLS } from "../data/spells";
 import { weaponById } from "../data/weapons";
 import { UiComponent } from "./UiComponent";
+import { emblemScale, GLYPH, spellGlyphKey } from "./icons";
+import { Hud } from "./Hud";
 import {
-  bar,
+  BRASS,
+  capsuleBar,
   COLOR_BRIGHT,
   COLOR_DIM,
+  COLOR_GOLD,
   COLOR_TEXT,
   heading,
+  keyBadge,
   label,
-  panel,
-  PANEL_EDGE,
 } from "./theme";
+import type { Frame } from "./theme";
 
-const SLOT_W = 124;
-const SLOT_H = 46;
-const SLOT_GAP = 8;
+const SLOT = 56;
+const SLOT_GAP = 10;
+const WEAPON_W = 232;
+const WEAPON_H = 112;
+
+interface Slot {
+  frame: Frame;
+  active: Frame;
+  glyph: Phaser.GameObjects.Image;
+  key: Phaser.GameObjects.Text;
+  cost: Phaser.GameObjects.Text;
+}
 
 /**
- * The weapon plate, the two melee swings with their cooldowns, and the spell
- * bar.
+ * The spell bar (bottom centre), the weapon plaque (bottom right) and the
+ * control reminder.
  *
  * Spell slots are created once for as many spells as the player can ever learn,
  * rather than for the six the bar used to assume, so learning a seventh does
- * not silently drop it.
+ * not silently drop it. Only the first six have number keys; the rest show a
+ * dot and are reached through the spellbook.
  */
 export class AbilityBar extends UiComponent {
-  private bars!: Phaser.GameObjects.Graphics;
+  private g!: Phaser.GameObjects.Graphics;
+  private slots: Slot[] = [];
+  private spellName!: Phaser.GameObjects.Text;
+  private empty!: Phaser.GameObjects.Text;
+
+  private weaponPlate!: Frame;
   private weaponName!: Phaser.GameObjects.Text;
-  private attackKeys: Phaser.GameObjects.Text[] = [];
-  private attackLabels: Phaser.GameObjects.Text[] = [];
-  private slotBoxes!: Phaser.GameObjects.Graphics;
-  private slotLabels: Phaser.GameObjects.Text[] = [];
-  /** The spell ids the labels were last written for, so text is only reset on change. */
-  private slotSignature = "";
+  private rowKeys: Phaser.GameObjects.Text[] = [];
+  private rowLabels: Phaser.GameObjects.Text[] = [];
+  private hints!: Phaser.GameObjects.Text;
 
   create(): void {
-    this.bars = this.track(this.scene.add.graphics().setDepth(1));
-    this.slotBoxes = this.track(this.scene.add.graphics().setDepth(2));
-
-    this.weaponName = this.track(
-      heading(this.scene, "", { size: 20, color: "#ecdcae", align: "left" })
-        .setOrigin(0, 0)
-        .setDepth(2),
-    );
-
-    for (let i = 0; i < 2; i++) {
-      this.attackKeys.push(
-        this.track(
-          label(this.scene, "", { size: 13, color: "#0d0e14", align: "center", bold: true })
-            .setOrigin(0.5, 0.5)
-            .setDepth(3),
-        ),
-      );
-      this.attackLabels.push(
-        this.track(
-          label(this.scene, "", { size: 15, color: COLOR_TEXT, align: "left" })
-            .setOrigin(0, 0)
-            .setDepth(3),
-        ),
-      );
-    }
+    this.slots = [];
+    this.rowKeys = [];
+    this.rowLabels = [];
+    this.g = this.track(this.scene.add.graphics().setDepth(3));
 
     for (let i = 0; i < AbilityBar.MAX_SPELL_SLOTS; i++) {
-      this.slotLabels.push(
-        this.track(
-          label(this.scene, "", { size: 14, color: "#f0e6d2", align: "center" })
-            .setOrigin(0.5, 0.5)
-            .setDepth(3),
-        ),
-      );
+      this.slots.push({
+        frame: this.frame("slot", 1),
+        active: this.frame("slotActive", 1),
+        glyph: this.track(this.scene.add.image(0, 0, "__DEFAULT").setDepth(2)),
+        key: this.track(label(this.scene, "", { size: 12, color: "#1a1208", bold: true, align: "center" }).setOrigin(0.5).setDepth(5)),
+        cost: this.track(label(this.scene, "", { size: 12, color: "#bcd8ff", bold: true }).setOrigin(1, 1).setDepth(5)),
+      });
+      this.slots[i]!.cost.setStroke("#05060a", 3);
+    }
+    this.spellName = this.track(heading(this.scene, "", { size: 15, color: COLOR_GOLD }).setOrigin(0.5, 1).setDepth(5));
+    this.spellName.setShadow(0, 1, "#000000", 3, false, true);
+    this.empty = this.track(label(this.scene, "No workings learned yet", { size: 15, color: COLOR_DIM, align: "center" }).setOrigin(0.5).setDepth(5));
+
+    this.weaponPlate = this.frame("ink", 1);
+    this.weaponName = this.track(heading(this.scene, "", { size: 17, color: "#f0deaa", align: "left" }).setDepth(5));
+    for (let i = 0; i < 3; i++) {
+      this.rowKeys.push(this.track(label(this.scene, "", { size: 12, color: "#1a1208", bold: true }).setOrigin(0.5).setDepth(6)));
+      this.rowLabels.push(this.track(label(this.scene, "", { size: 14, color: COLOR_TEXT }).setOrigin(0, 0.5).setDepth(5)));
+    }
+
+    this.hints = this.track(label(this.scene, "", { size: 13, color: "#c8bfa8", align: "center" }).setOrigin(0.5, 1).setDepth(5));
+    this.hints.setStroke("#05060a", 3);
+  }
+
+  update(width: number, height: number, time: number): void {
+    this.g.clear();
+    const compact = width < 900;
+    this.hints.setPosition(width / 2, height - 6).setText(compact ? Hud.COMPACT_HINTS : Hud.HINTS);
+    const barBottom = height - 30;
+    this.drawSpells(width, barBottom, time);
+    this.drawWeapon(width, barBottom, compact);
+  }
+
+  private drawSpells(width: number, bottom: number, time: number): void {
+    const state = this.world.state;
+    const learned = state.player.learnedSpells.slice(0, AbilityBar.MAX_SPELL_SLOTS);
+    const selected = state.player.selectedSpell;
+    const totalW = learned.length * SLOT + Math.max(0, learned.length - 1) * SLOT_GAP;
+    // Keep clear of the weapon plaque on narrow windows.
+    const startX = Math.max(16, Math.min((width - totalW) / 2, width - WEAPON_W - 40 - totalW));
+    const y = bottom - SLOT;
+
+    this.empty.setVisible(learned.length === 0).setPosition(width / 2, bottom - SLOT / 2);
+
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i]!;
+      const id = learned[i];
+      const spell = id ? SPELLS[id] : undefined;
+      if (!spell || !id) {
+        slot.frame.setVisible(false);
+        slot.active.setVisible(false);
+        slot.glyph.setVisible(false);
+        slot.key.setVisible(false);
+        slot.cost.setVisible(false);
+        continue;
+      }
+      const x = startX + i * (SLOT + SLOT_GAP);
+      const isSelected = id === selected;
+      const lift = isSelected ? -4 : 0;
+      const fraction = this.world.spells.cooldownFraction(id);
+      const affordable = state.player.mana >= spell.manaCost;
+
+      (isSelected ? slot.active : slot.frame).draw(x, y + lift, SLOT, SLOT);
+      (isSelected ? slot.frame : slot.active).setVisible(false);
+
+      const pulse = isSelected ? 1 + Math.sin(time / 300) * 0.04 : 1;
+      slot.glyph
+        .setTexture(spellGlyphKey(this.scene, spell.kind))
+        .setScale(emblemScale(GLYPH, 34) * pulse)
+        .setPosition(x + SLOT / 2, y + SLOT / 2 + lift)
+        .setTint(spell.color)
+        .setAlpha(affordable ? 1 : 0.35)
+        .setVisible(true);
+
+      // Cooldown: a dark pie that unwinds clockwise.
+      if (fraction > 0) {
+        this.g.fillStyle(0x05060a, 0.62);
+        this.g.slice(x + SLOT / 2, y + SLOT / 2 + lift, SLOT * 0.42, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fraction, false);
+        this.g.fillPath();
+      }
+      if (!affordable) {
+        this.g.lineStyle(1.5, 0x8a2a2a, 0.9);
+        this.g.strokeRoundedRect(x + 4, y + 4 + lift, SLOT - 8, SLOT - 8, 5);
+      }
+
+      // Number key badge, top left.
+      const hasKey = i < 6;
+      keyBadge(this.g, x + 6, y + 6 + lift, 8, hasKey);
+      slot.key
+        .setText(hasKey ? `${i + 1}` : "")
+        .setPosition(x + 6, y + 6 + lift)
+        .setVisible(true);
+      slot.cost
+        .setText(`${spell.manaCost}`)
+        .setPosition(x + SLOT - 6, y + SLOT - 3 + lift)
+        .setColor(affordable ? "#bcd8ff" : "#e08a7a")
+        .setVisible(true);
+    }
+
+    const current = SPELLS[selected];
+    if (current && learned.includes(selected)) {
+      const index = learned.indexOf(selected);
+      const cx = startX + index * (SLOT + SLOT_GAP) + SLOT / 2;
+      this.spellName.setVisible(true).setText(current.name).setPosition(Math.max(80, Math.min(width - 80, cx)), y - 8);
+    } else {
+      this.spellName.setVisible(false);
     }
   }
 
-  update(width: number, height: number): void {
-    this.drawWeaponPanel(width, height);
-    this.drawSpellBar(width, height);
-  }
-
-  private drawWeaponPanel(width: number, height: number): void {
+  private drawWeapon(width: number, bottom: number, compact: boolean): void {
     const weapon = weaponById(this.world.state.player.weapon);
-    const g = this.bars;
-    const compact = width < 620;
-    const panelWidth = compact ? 206 : 256;
-    const panelHeight = compact ? 112 : 116;
-    const panelGap = compact ? 10 : 18;
-    const panelBottom = height - 130;
-    const x = width - panelWidth - (compact ? 12 : 24);
-    const y = Math.max(12, panelBottom - panelHeight - panelGap);
+    const w = compact ? 200 : WEAPON_W;
+    const x = width - w - 18;
+    const y = bottom - WEAPON_H;
+    this.weaponPlate.draw(x, y, w, WEAPON_H);
+    this.weaponName.setPosition(x + 18, y + 12).setText(weapon.name);
 
-    g.clear();
-    panel(g, x, y, panelWidth, panelHeight);
-    this.weaponName
-      .setFontSize(compact ? 17 : 20)
-      .setPosition(x + 14, y + 10)
-      .setText(weapon.name);
-
-    const rows: Array<{ key: string; name: string; kind: "light" | "heavy" }> = [
-      { key: "Z", name: "Light", kind: "light" },
-      { key: "X", name: "Heavy", kind: "heavy" },
+    const rows: Array<{ key: string; name: string; fraction: number; detail: string }> = [
+      {
+        key: "Z",
+        name: "Light",
+        fraction: this.world.combat.cooldownFraction("light", weapon.id),
+        detail: `${weapon.light.damage}`,
+      },
+      {
+        key: "X",
+        name: "Heavy",
+        fraction: this.world.combat.cooldownFraction("heavy", weapon.id),
+        detail: `${weapon.heavy.damage}`,
+      },
+      {
+        key: "C",
+        name: "Dash",
+        fraction: this.world.player.dashCooldownFraction,
+        detail: "",
+      },
     ];
 
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const text = this.attackLabels[i];
-      if (!row || !text) continue;
-
-      const fraction = this.world.combat.cooldownFraction(row.kind, weapon.id);
-      const ready = fraction <= 0;
-      const damage = row.kind === "light" ? weapon.light.damage : weapon.heavy.damage;
-      const rowY = y + 43 + i * 27;
-      const key = this.attackKeys[i];
-
-      g.fillStyle(ready ? 0xd9b44a : 0x777064, 1);
-      g.fillRoundedRect(x + 14, rowY - 2, 27, 20, 4);
-      g.lineStyle(1, 0xf0dca0, 0.7);
-      g.strokeRoundedRect(x + 14, rowY - 2, 27, 20, 4);
-
-      key
-        ?.setPosition(x + 27.5, rowY + 8)
-        .setText(row.key)
-        .setColor(ready ? "#0d0e14" : "#1b1a18")
-        .setFontSize(compact ? 12 : 13);
-      text
-        .setFontSize(compact ? 13 : 15)
-        .setPosition(x + 50, rowY)
-        .setText(`${row.name}    ${damage} dmg`)
+      const row = rows[i]!;
+      const ry = y + 46 + i * 22;
+      const ready = row.fraction <= 0;
+      keyBadge(this.g, x + 26, ry, 9, ready);
+      this.rowKeys[i]!.setText(row.key).setPosition(x + 26, ry);
+      this.rowLabels[i]!
+        .setPosition(x + 42, ry)
+        .setText(row.detail ? `${row.name}  ${row.detail}` : row.name)
         .setColor(ready ? COLOR_TEXT : "#8a8375");
-
-      bar(
-        g,
-        x + 14,
-        rowY + 23,
-        panelWidth - 28,
-        5,
-        1 - fraction,
-        ready ? 0x77b85a : 0xd9b44a,
-        0x24262e,
-      );
+      capsuleBar(this.g, x + 112, ry - 3, w - 132, 6, 1 - row.fraction, ready ? 0x7fbf5a : BRASS, 0x1a1c24);
     }
-  }
-
-  private drawSpellBar(width: number, height: number): void {
-    const learned = this.world.state.player.learnedSpells;
-    const selected = this.world.state.player.selectedSpell;
-    const shown = learned.slice(0, AbilityBar.MAX_SPELL_SLOTS);
-    const y = height - 130;
-
-    const signature = shown.join("|");
-    if (signature !== this.slotSignature) {
-      this.slotSignature = signature;
-      for (let i = 0; i < this.slotLabels.length; i++) {
-        const spell = shown[i] ? SPELLS[shown[i] as string] : undefined;
-        this.slotLabels[i]?.setText(spell ? `${spell.name}\n${spell.manaCost} mp` : "");
-      }
-    }
-
-    const totalW = shown.length * SLOT_W + Math.max(0, shown.length - 1) * SLOT_GAP;
-    const startX = (width - totalW) / 2;
-
-    this.slotBoxes.clear();
-    for (let i = 0; i < this.slotLabels.length; i++) {
-      const text = this.slotLabels[i];
-      if (!text) continue;
-      const id = shown[i];
-      if (!id) {
-        text.setVisible(false);
-        continue;
-      }
-
-      const spell = SPELLS[id];
-      const x = startX + i * (SLOT_W + SLOT_GAP);
-      const isSelected = id === selected;
-      const fraction = this.world.spells.cooldownFraction(id);
-      const affordable = this.world.state.player.mana >= (spell?.manaCost ?? 0);
-
-      this.slotBoxes.fillStyle(0x0d0e14, 0.92);
-      this.slotBoxes.fillRoundedRect(x, y, SLOT_W, SLOT_H, 5);
-      if (fraction > 0) {
-        this.slotBoxes.fillStyle(0x000000, 0.55);
-        this.slotBoxes.fillRect(x, y, Math.round(SLOT_W * fraction), SLOT_H);
-      }
-      this.slotBoxes.lineStyle(isSelected ? 2 : 1, isSelected ? 0xd9b44a : PANEL_EDGE, 1);
-      this.slotBoxes.strokeRoundedRect(x, y, SLOT_W, SLOT_H, 5);
-
-      text
-        .setPosition(x + SLOT_W / 2, y + SLOT_H / 2)
-        .setVisible(true)
-        .setColor(affordable ? (isSelected ? COLOR_BRIGHT : "#c2bcab") : "#7a7264");
-    }
-
-    if (shown.length === 0) {
-      this.slotLabels[0]
-        ?.setVisible(true)
-        .setPosition(width / 2, y + SLOT_H / 2)
-        .setText("no spells learned")
-        .setColor(COLOR_DIM);
-    }
+    // Readiness glow on the plate's name when both swings are available.
+    this.weaponName.setColor(rows[0]!.fraction <= 0 && rows[1]!.fraction <= 0 ? "#f0deaa" : COLOR_BRIGHT);
   }
 
   /** More than any character can learn in the current story. */

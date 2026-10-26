@@ -10,8 +10,8 @@ type Mode = "idle" | "chase" | "return";
 
 const BAR_WIDTH = 26;
 const BAR_HEIGHT = 3;
-/** How far above the feet the health bar floats. Clears the 40px sprite. */
-const BAR_OFFSET = 46;
+/** How far above the feet the health bar floats. Clears the tallest 48px frame. */
+const BAR_OFFSET = 50;
 
 /**
  * A hostile that keeps to the area it spawned in. It only chases while the
@@ -117,6 +117,7 @@ export class Enemy extends Actor {
         this.attackCooldown = 1.1;
         onHitPlayer(this.archetype.damage);
         this.lunge(this.direction, 5, world);
+        this.strikePose("attack", 240);
         this.scene.tweens.add({
           targets: this.sprite,
           scaleX: 1.12,

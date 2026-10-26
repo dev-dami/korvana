@@ -1,4 +1,7 @@
 import { QUESTS } from "../data/quests";
+import type { Effects } from "../data/effects";
+import { ITEMS } from "../data/items";
+import { SPELLS } from "../data/spells";
 import type { QuestDef, QuestStage } from "../data/quests";
 import type { GameState } from "../state/GameState";
 import type { GameEvent } from "./GameEvents";
@@ -11,6 +14,11 @@ export interface AdvanceResult {
   reward?: string;
   /** The stage now current, if the quest is still running. Its onEnter is the caller's to apply. */
   stage?: QuestStage;
+  /**
+   * The finished stage's `onProgress` entries for every step just crossed,
+   * in order. The caller applies them, exactly like `stage.onEnter`.
+   */
+  progressEffects?: Effects[];
 }
 
 export interface RecordedAdvance {
@@ -71,17 +79,30 @@ export class QuestSystem {
     const stage = def.stages[q.stageIndex];
     if (!stage) return { stageChanged: false, completed: false };
 
+    const before = q.progress;
     q.progress = Math.min(stage.count, q.progress + count);
-    if (q.progress < stage.count) return { stageChanged: false, completed: false };
+
+    // Steps crossed on the way, for stages that mark each one ("the third
+    // Keeper page"). Collected before the stage rolls over and resets.
+    let progressEffects: Effects[] | undefined;
+    if (stage.onProgress) {
+      progressEffects = [];
+      for (let step = before + 1; step <= q.progress; step++) {
+        const effect = stage.onProgress[step - 1];
+        if (effect) progressEffects.push(effect);
+      }
+    }
+
+    if (q.progress < stage.count) return { stageChanged: false, completed: false, progressEffects };
 
     q.stageIndex++;
     q.progress = 0;
 
     if (q.stageIndex >= def.stages.length) {
       q.complete = true;
-      return { stageChanged: true, completed: true, reward: this.grantRewards(def) };
+      return { stageChanged: true, completed: true, reward: this.grantRewards(def), progressEffects };
     }
-    return { stageChanged: true, completed: false, stage: def.stages[q.stageIndex] };
+    return { stageChanged: true, completed: false, stage: def.stages[q.stageIndex], progressEffects };
   }
 
   /** Marks the current objective done regardless of its count. */
@@ -111,9 +132,12 @@ export class QuestSystem {
       const trigger = stage.trigger;
       if (trigger.kind !== event.kind) continue;
       if (trigger.id !== undefined && trigger.id !== event.id) continue;
+      if (trigger.ids !== undefined && (event.id === undefined || !trigger.ids.includes(event.id))) {
+        continue;
+      }
 
       const result = this.advance(id, event.amount ?? trigger.amount ?? 1);
-      if (result.stageChanged) changes.push({ questId: id, result });
+      if (result.stageChanged || result.progressEffects?.length) changes.push({ questId: id, result });
     }
 
     return changes;
@@ -153,8 +177,8 @@ export class QuestSystem {
 
     const bits: string[] = [];
     if (def.rewardGold) bits.push(`+${def.rewardGold}g`);
-    if (def.rewardItems.length) bits.push(def.rewardItems.join(", "));
-    if (def.rewardSpell) bits.push(`spell: ${def.rewardSpell}`);
+    if (def.rewardItems.length) bits.push(def.rewardItems.map((id) => ITEMS[id]?.name ?? id).join(", "));
+    if (def.rewardSpell) bits.push(`spell: ${SPELLS[def.rewardSpell]?.name ?? def.rewardSpell}`);
     return bits.length ? `${def.name} complete (${bits.join(" | ")})` : `${def.name} complete`;
   }
 }

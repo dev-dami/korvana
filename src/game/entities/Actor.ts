@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 
 import { DEPTH } from "../config";
-import { animKey, idleKey, sheetKey } from "../gfx/characters";
+import { animKey, attackKey, castKey, idleKey, LOOKS, sheetKey } from "../gfx/characters";
 import type { Direction } from "../types";
 import type { WorldManager } from "../world/WorldManager";
 
@@ -24,11 +24,15 @@ const PERSONAL_SPACE = 30;
 /**
  * Height above an actor's feet of the point attacks are aimed at.
  *
- * Sprites are 40px tall with their feet at `y`, and the robe reads from about
- * `y-14` to `y-2`, so this lands on the torso. Melee arcs and spell bolts both
- * use it so their hit boxes cannot drift apart.
+ * Sprites are 32x48 frames with their feet at `y`; a student's robe reads from
+ * about `y-20` to `y-3` and an adult's a little higher, so this lands on the
+ * torso. Melee arcs and spell bolts both use it so their hit boxes cannot
+ * drift apart.
  */
-export const ACTOR_BODY_OFFSET = 8;
+export const ACTOR_BODY_OFFSET = 14;
+
+/** Which held pose an actor can strike. See gfx/characters.ts. */
+export type ActorPose = "cast" | "attack";
 
 /**
  * Anything that walks around with its feet on the ground: a sprite, a shadow,
@@ -39,7 +43,8 @@ export class Actor {
   readonly scene: Phaser.Scene;
   readonly sprite: Phaser.GameObjects.Sprite;
   readonly shadow: Phaser.GameObjects.Image;
-  readonly lookKey: string;
+  /** The costume being worn. Change it with setLook(). */
+  lookKey: string;
 
   /** Feet position in world pixels - the anchor everything else uses. */
   x: number;
@@ -52,6 +57,8 @@ export class Actor {
   protected footW = 22;
   protected footH = 14;
   private destroyed = false;
+  /** Scene time until which a struck pose (cast, attack) holds the sprite. */
+  private poseUntil = 0;
 
   constructor(scene: Phaser.Scene, lookKey: string, x: number, y: number) {
     this.scene = scene;
@@ -73,6 +80,16 @@ export class Actor {
       .setDepth(y);
 
     this.playIdle("down");
+    this.fitShadow();
+  }
+
+  /** Hovering things (ghosts, the lamp, bats) cast a smaller, fainter shadow. */
+  private fitShadow(): void {
+    const look = LOOKS[this.lookKey];
+    const floats = look?.floats === true;
+    const small = look?.body === "owl" || look?.body === "bat";
+    this.shadow.setScale(small ? 0.6 : floats ? 0.8 : look?.body === "spider" ? 1.25 : 1);
+    this.shadow.setAlpha(floats ? 0.3 : 0.55);
   }
 
   get alive(): boolean {
@@ -106,12 +123,43 @@ export class Actor {
 
   protected playIdle(dir: Direction): void {
     this.direction = dir;
+    if (this.posing) return;
     this.sprite.anims.play(idleKey(this.lookKey, dir), true);
   }
 
   protected playWalk(dir: Direction): void {
     this.direction = dir;
+    if (this.posing) return;
     this.sprite.anims.play(animKey(this.lookKey, dir), true);
+  }
+
+  private get posing(): boolean {
+    return this.poseUntil > this.scene.time.now;
+  }
+
+  /**
+   * Changes costume without losing place: the same facing and the same
+   * walk-or-stand state carry over. Unknown looks are ignored rather than
+   * leaving the actor invisible.
+   */
+  setLook(lookKey: string): void {
+    if (lookKey === this.lookKey || !this.scene.textures.exists(sheetKey(lookKey))) return;
+    this.lookKey = lookKey;
+    this.poseUntil = 0;
+    this.fitShadow();
+    if (this.moving) this.playWalk(this.direction);
+    else this.playIdle(this.direction);
+  }
+
+  /**
+   * Holds a cast or attack pose for a moment - wand raised, or lunging - then
+   * drops back into walking or standing on the next update.
+   */
+  strikePose(pose: ActorPose, durationMs = 220): void {
+    const key = pose === "cast" ? castKey(this.lookKey, this.direction) : attackKey(this.lookKey, this.direction);
+    if (!this.scene.anims.exists(key)) return;
+    this.poseUntil = this.scene.time.now + durationMs;
+    this.sprite.anims.play(key, true);
   }
 
   /** Stand still, but keep looking a particular way. */

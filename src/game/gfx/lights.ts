@@ -29,6 +29,18 @@ export interface LightSource extends LightSpec {
 /** Texture key -> the light it gives off. Extend this for new glowing props. */
 export const LIGHT_EMITTERS: Record<string, LightSpec> = {
   st_torch: { radius: 150, color: 0xffa04a, intensity: 0.9, flicker: 0.35, offsetY: -30 },
+  // The Academy, its grounds and the tombs (gfx/dungeonTiles.ts).
+  dg_wall_crypt_torch: { radius: 170, color: 0xffa04a, intensity: 0.9, flicker: 0.35, offsetY: -30 },
+  dg_wall_barrow_torch: { radius: 160, color: 0xff9440, intensity: 0.85, flicker: 0.4, offsetY: -30 },
+  dg_wall_reliquary_torch: { radius: 180, color: 0xbfe4ff, intensity: 0.85, flicker: 0.2, offsetY: -30 },
+  dg_wall_hall_torch: { radius: 170, color: 0xffb04a, intensity: 0.85, flicker: 0.3, offsetY: -30 },
+  dg_wall_hall_window: { radius: 120, color: 0xd8c8ff, intensity: 0.5, flicker: 0, offsetY: -24 },
+  dg_wall_hearth: { radius: 200, color: 0xff8a3a, intensity: 0.95, flicker: 0.45, offsetY: -8 },
+  dg_candelabra: { radius: 150, color: 0xffc060, intensity: 0.8, flicker: 0.25, offsetY: -40 },
+  dg_castle_window: { radius: 110, color: 0xffc66a, intensity: 0.6, flicker: 0.1, offsetY: -70 },
+  dg_lamp_post: { radius: 170, color: 0xffc060, intensity: 0.85, flicker: 0.2, offsetY: -50 },
+  dg_brazier_post: { radius: 190, color: 0xffa04a, intensity: 0.95, flicker: 0.4, offsetY: -44 },
+  dg_shelf_sealed: { radius: 90, color: 0xa8d8ff, intensity: 0.5, flicker: 0.1, offsetY: -28 },
 };
 
 /** Runtime light sources. Owned by WorldScene as `lightRegistry`. */

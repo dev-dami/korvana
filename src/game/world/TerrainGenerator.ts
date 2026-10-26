@@ -6,6 +6,7 @@ import type { ResolvedTile, StructureDef } from "../data/structures";
 import { LANDMARKS } from "../data/landmarks";
 import { GROUND_VARIANTS } from "../gfx/tiles";
 import type { Biome, GroundTile } from "../types";
+import { COVER_DENSITY, EXTRA_DECALS, coverFor, decalFor, propVariety } from "./scatter";
 
 export interface ChunkSprite {
   texture: string;
@@ -31,7 +32,21 @@ export interface Chunk {
    * refuse to generate in a chunk that holds one.
    */
   reserved: Uint8Array;
+  /**
+   * Ground kinds for this chunk plus a one-tile ring of its neighbours
+   * (RING x RING, row-major, starting at local tile -1,-1). Purely visual:
+   * the baker uses it to blend biome borders and coasts across chunk seams.
+   */
+  ring: GroundTile[];
+  /**
+   * Terrain elevation at every tile corner (CHUNK_TILES+1 squared), or null
+   * when the chunk and its ring hold no water. Shades water by depth.
+   */
+  waterElevation: Float32Array | null;
 }
+
+/** Side of the ground ring: the chunk plus one tile all round. */
+export const RING = CHUNK_TILES + 2;
 
 const PROP_DENSITY: Record<Biome, { oak: number; pine: number; bush: number; rock: number; dead: number }> = {
   ocean: { oak: 0, pine: 0, bush: 0, rock: 0, dead: 0 },
@@ -143,6 +158,8 @@ export class TerrainGenerator {
       tiles: new Array<ResolvedTile | null>(size).fill(null),
       sprites: [],
       reserved: new Uint8Array(size),
+      ring: new Array<GroundTile>(RING * RING),
+      waterElevation: null,
     };
 
     const baseX = cx * CHUNK_TILES;
@@ -160,6 +177,8 @@ export class TerrainGenerator {
       }
     }
 
+    this.fillRing(chunk);
+
     // --- 2. fixed landmarks ---
     // Stamped before anything random so a story location always wins the space
     // it was authored for.
@@ -176,6 +195,11 @@ export class TerrainGenerator {
     }
 
     // --- 4. scattering ---
+    // Purely decorative choices (which species, extra ground cover) draw from
+    // their own stream, so the solid layout below stays exactly what the
+    // original single stream produced.
+    const decor = makeRng(chunkSeed(cx, cy, this.worldSeed) ^ 0x0dec0de5);
+    const occupied = new Uint8Array(size);
     for (let ly = 0; ly < CHUNK_TILES; ly++) {
       for (let lx = 0; lx < CHUNK_TILES; lx++) {
         const wx = baseX + lx;
@@ -214,6 +238,8 @@ export class TerrainGenerator {
         }
 
         if (texture) {
+          texture = propVariety(texture, biome, decor());
+          occupied[i] = 1;
           chunk.sprites.push({
             texture,
             wx: wx * TILE + TILE / 2,
@@ -226,12 +252,84 @@ export class TerrainGenerator {
 
         const decalChance = DECAL_DENSITY[biome] ?? 0;
         if (decalChance > 0 && rng() < decalChance) {
-          chunk.overlay[i] = DECALS[Math.floor(rng() * DECALS.length)] ?? null;
+          const legacy = DECALS[Math.floor(rng() * DECALS.length)] ?? null;
+          chunk.overlay[i] = decalFor(biome, decor()) ?? legacy;
         }
       }
     }
 
+    this.scatterCover(chunk, occupied, decor);
     return chunk;
+  }
+
+  /**
+   * Non-solid ground cover - tall grass, ferns, reeds - and extra flat decals.
+   * Nothing here changes what is walkable.
+   */
+  private scatterCover(chunk: Chunk, occupied: Uint8Array, rng: () => number): void {
+    const baseX = chunk.cx * CHUNK_TILES;
+    const baseY = chunk.cy * CHUNK_TILES;
+    for (let ly = 0; ly < CHUNK_TILES; ly++) {
+      for (let lx = 0; lx < CHUNK_TILES; lx++) {
+        const i = idx(lx, ly);
+        const roll = rng();
+        const pick = rng();
+        const jx = rng();
+        const jy = rng();
+        if (chunk.solid[i] === 1 || chunk.tiles[i] || chunk.reserved[i] === 1 || occupied[i] === 1) continue;
+
+        const wx = baseX + lx;
+        const wy = baseY + ly;
+        const biome = this.model.biomeAt(wx, wy);
+        const cover = COVER_DENSITY[biome] ?? 0;
+        if (roll < cover) {
+          const texture = coverFor(biome, pick);
+          if (texture) {
+            const py = wy * TILE + 10 + Math.floor(jy * (TILE - 10));
+            chunk.sprites.push({
+              texture,
+              wx: wx * TILE + 6 + Math.floor(jx * (TILE - 12)),
+              wy: py,
+              bias: -2,
+            });
+            continue;
+          }
+        }
+        const extra = EXTRA_DECALS[biome] ?? 0;
+        if (!chunk.overlay[i] && roll > 1 - extra) {
+          chunk.overlay[i] = decalFor(biome, pick);
+        }
+      }
+    }
+  }
+
+  /** Ground kinds of the chunk and its one-tile ring, plus water depth if needed. */
+  private fillRing(chunk: Chunk): void {
+    const baseX = chunk.cx * CHUNK_TILES;
+    const baseY = chunk.cy * CHUNK_TILES;
+    let water = false;
+    for (let ry = 0; ry < RING; ry++) {
+      for (let rx = 0; rx < RING; rx++) {
+        const lx = rx - 1;
+        const ly = ry - 1;
+        const inside = lx >= 0 && ly >= 0 && lx < CHUNK_TILES && ly < CHUNK_TILES;
+        const ground = inside
+          ? (chunk.ground[idx(lx, ly)] as GroundTile)
+          : this.model.groundTile(baseX + lx, baseY + ly);
+        chunk.ring[ry * RING + rx] = ground;
+        if (ground === "water" || ground === "deep_water") water = true;
+      }
+    }
+    if (!water) return;
+
+    const side = CHUNK_TILES + 1;
+    const elevation = new Float32Array(side * side);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        elevation[y * side + x] = this.model.elevation(baseX + x, baseY + y);
+      }
+    }
+    chunk.waterElevation = elevation;
   }
 
   private hasReservedTile(chunk: Chunk): boolean {

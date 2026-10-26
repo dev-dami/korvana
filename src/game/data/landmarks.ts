@@ -216,6 +216,7 @@ export const LANDMARKS: LandmarkDef[] = [
     forceRect: { x: -48, y: -40, w: 154, h: 128 },
     // Covers the whole interior: nothing hunts students in their own halls.
     safeRadius: 4200,
+    lore: "the_great_hall",
   },
   {
     id: "undercroft",
@@ -226,6 +227,7 @@ export const LANDMARKS: LandmarkDef[] = [
     forceBiome: "crypt",
     forceRect: { x: -48, y: -40, w: 152, h: 124 },
     safeRadius: 300,
+    lore: "undercroft",
   },
   {
     // Zone: the Undercroft's relic chamber.
@@ -244,6 +246,7 @@ export const LANDMARKS: LandmarkDef[] = [
     forceBiome: "crypt",
     forceRect: { x: -48, y: -40, w: 162, h: 116 },
     safeRadius: 300,
+    lore: "thornroot_barrow",
   },
   {
     // Zone: the Barrow's relic chamber.
@@ -262,6 +265,7 @@ export const LANDMARKS: LandmarkDef[] = [
     forceBiome: "crypt",
     forceRect: { x: -48, y: -40, w: 160, h: 122 },
     safeRadius: 300,
+    lore: "skyfall_reliquary",
   },
   {
     // Zone: the Reliquary's relic chamber.
