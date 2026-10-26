@@ -889,7 +889,9 @@ export class WorldScene extends Phaser.Scene {
       }
 
       enemy.update(this.world, dt, this.player, this.enemies, (damage) => this.hurtPlayer(damage));
-      survivors.push(enemy);
+      // A killing blow on the player clears the field mid-loop; don't carry
+      // the destroyed enemies back into the live list.
+      if (enemy.alive) survivors.push(enemy);
     }
 
     this.enemies = survivors;

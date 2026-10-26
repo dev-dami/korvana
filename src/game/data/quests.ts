@@ -117,7 +117,10 @@ export const QUESTS: Record<string, QuestDef> = {
     rewardSpell: "arcane_dart",
     onComplete: {
       lore: "the_houses",
-      toast: "Every student leaves the Choosing with one spell. Yours is Arcane Dart.",
+      // Straight into the first lesson, so the tracker always has somewhere
+      // to point once the ceremony is over.
+      startQuest: "first_lesson",
+      toast: "Every student leaves the Choosing with one spell. Yours is Arcane Dart. Professor Alden would like to see it.",
     },
   },
 

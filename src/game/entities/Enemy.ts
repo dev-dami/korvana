@@ -116,6 +116,9 @@ export class Enemy extends Actor {
       if (this.attackCooldown <= 0) {
         this.attackCooldown = 1.1;
         onHitPlayer(this.archetype.damage);
+        // A killing blow makes the world clear the field (collapse() destroys
+        // every enemy), so this one may no longer exist to finish its swing.
+        if (!this.alive) return;
         this.lunge(this.direction, 5, world);
         this.strikePose("attack", 240);
         this.scene.tweens.add({

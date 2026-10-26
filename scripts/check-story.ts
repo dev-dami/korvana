@@ -570,7 +570,8 @@ function play(route: Route): Playthrough {
   if (p.state.house !== route.house) p.fail(`expected house ${route.house}, got ${p.state.house}`);
   for (const h of HOUSE_IDS) if (h !== route.house) p.expectFlag(`house_${h}`, false);
 
-  p.talk("professor_alden", "What would you have me do first?", "Consider it done.");
+  // The Choosing hands the first lesson straight over.
+  if (!p.state.quest("first_lesson")) p.fail("the Choosing should start first_lesson");
   p.emit({ kind: "spell_cast", id: "arcane_dart" });
   p.talk("professor_alden", "I have cast a spell", "surprisingly good advice");
   p.expectComplete("first_lesson");
