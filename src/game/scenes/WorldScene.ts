@@ -283,7 +283,9 @@ export class WorldScene extends Phaser.Scene {
     // The player is held still in every non-gameplay branch, otherwise the last
     // walk animation keeps cycling while they stand in a conversation.
     if (this.cutscenes.active) {
-      if (pressed.has("interact") || pressed.has("cast") || pressed.has("confirm")) {
+      if (this.finishTyping(pressed)) {
+        // The line was still being typed: that press only finished it.
+      } else if (pressed.has("interact") || pressed.has("cast") || pressed.has("confirm")) {
         this.cutscenes.advance();
       }
       if (pressed.has("escape")) this.cutscenes.clear();
@@ -573,6 +575,7 @@ export class WorldScene extends Phaser.Scene {
       this.dialogue.end();
       return;
     }
+    if (this.finishTyping(pressed)) return;
 
     const choices = this.dialogue.choices();
     if (choices.length === 0) {
@@ -587,6 +590,13 @@ export class WorldScene extends Phaser.Scene {
       this.dialogue.choose(i);
       return;
     }
+  }
+
+  /** While the UI is typing a line out, a press finishes it instead of acting. */
+  private finishTyping(pressed: ReadonlySet<string>): boolean {
+    if (pressed.size === 0 || pressed.has("escape") || !this.registry.get("ui:typing")) return false;
+    this.game.events.emit("korvana:finish-typing");
+    return true;
   }
 
   // --- inventory & journal ----------------------------------------------
@@ -723,6 +733,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const heavy = kind === "heavy";
+    this.player.strikePose("attack", heavy ? 300 : 200);
     this.audio.playAttack(heavy, outcome.hits > 0);
     calloutText(
       this,
@@ -919,6 +930,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    this.player.strikePose("cast", 260);
     this.audio.playSpell(SPELLS[spellId]?.kind);
     this.story.report({ kind: "spell_cast", id: spellId });
   }

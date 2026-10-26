@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 
 import { PLAYER_DASH_COOLDOWN, PLAYER_DASH_DISTANCE, PLAYER_SPEED, PLAYER_SPRINT } from "../config";
+import { heroLook } from "../gfx/looks";
+import type { GameState } from "../state/GameState";
 import { Actor, dirVector } from "./Actor";
 import type { WorldManager } from "../world/WorldManager";
 
@@ -23,6 +25,7 @@ export class Player extends Actor {
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, "hero", x, y);
     this.speed = PLAYER_SPEED;
+    this.wearHouseColours();
 
     const kb = scene.input.keyboard;
     if (!kb) throw new Error("Keyboard input is unavailable");
@@ -41,6 +44,7 @@ export class Player extends Actor {
 
   update(world: WorldManager, dt: number): void {
     this.dashCooldownMs = Math.max(0, this.dashCooldownMs - dt * 1000);
+    this.wearHouseColours();
 
     let vx = 0;
     let vy = 0;
@@ -58,6 +62,26 @@ export class Player extends Actor {
 
     const speed = (this.sprintKey.isDown ? PLAYER_SPRINT : this.speed) * this.speedScale;
     this.applyVelocity(world, vx * speed, vy * speed, dt);
+  }
+
+  /**
+   * Also checked while standing still, so the robe changes colour the moment
+   * the Choosing Lamp names a House - mid-conversation, in front of everyone.
+   */
+  holdStill(): void {
+    this.wearHouseColours();
+    super.holdStill();
+  }
+
+  /**
+   * Wren wears plain travelling grey until sorted, then the House robe. Polled
+   * rather than evented: it is one string compare a frame, and it means a save
+   * loaded mid-story is dressed correctly with no extra plumbing.
+   */
+  private wearHouseColours(): void {
+    const state = this.scene.registry.get("state") as GameState | undefined;
+    const look = heroLook(state?.house ?? null);
+    if (look !== this.lookKey) this.setLook(look);
   }
 
   get sprinting(): boolean {

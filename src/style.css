@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   font-family: "EB Garamond", Georgia, "Palatino Linotype", "Times New Roman", serif;
-  --korvana-ink: #07080b;
+  --korvana-ink: #04061a;
   --korvana-gold: #e9d9a6;
 }
 
@@ -22,7 +22,8 @@ body {
   width: 100vw;
   height: 100vh;
   display: block;
-  background: radial-gradient(circle at 50% 40%, #121b26 0%, var(--korvana-ink) 70%);
+  /* The title is a night sky; match it so the first frame does not flash. */
+  background: radial-gradient(circle at 50% 35%, #1f2152 0%, #0c1236 40%, var(--korvana-ink) 80%);
 }
 
 ::selection {
@@ -39,4 +40,9 @@ body {
   display: block;
   width: 100% !important;
   height: 100% !important;
+}
+
+/* Menus are keyboard-first; the title and duel menus show a hand on hover. */
+#app canvas:focus {
+  outline: none;
 }
