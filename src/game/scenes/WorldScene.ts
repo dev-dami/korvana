@@ -34,6 +34,7 @@ import { StoryDirector } from "../systems/StoryDirector";
 import { AudioSystem } from "../systems/AudioSystem";
 import { zoneForBiome } from "../audio/zones";
 import { LightRegistry } from "../gfx/lights";
+import { WorldFx } from "../gfx/WorldFx";
 import type { GameState } from "../state/GameState";
 import { TransitionManager } from "../world/TransitionManager";
 import { WorldManager } from "../world/WorldManager";
@@ -74,6 +75,8 @@ export class WorldScene extends Phaser.Scene {
   enemies: Enemy[] = [];
   /** Runtime light sources (braziers, spells, lanterns). See gfx/lights.ts. */
   readonly lightRegistry = new LightRegistry();
+  /** Lighting, weather, water and combat effects. See gfx/WorldFx.ts. */
+  fx!: WorldFx;
 
   private interaction!: InteractionSystem;
   private effectRunner!: EffectRunner;
@@ -143,6 +146,7 @@ export class WorldScene extends Phaser.Scene {
     const model = new WorldModel(this.state.data.seed);
     this.world = new WorldManager(this, model);
     this.transition = new TransitionManager(this);
+    this.fx = new WorldFx(this);
 
     // Story systems. Order matters: the effect runner needs the quests and the
     // inventory, and the director needs the runner.
@@ -232,6 +236,7 @@ export class WorldScene extends Phaser.Scene {
     this.cutscenes.clear();
     this.gameEvents.clear();
     this.world.destroy();
+    this.fx.destroy();
     // The audio engine is game-wide and outlives a scene restart, so the music
     // carries on through a save load rather than cutting out.
   }
@@ -331,6 +336,7 @@ export class WorldScene extends Phaser.Scene {
     this.pollNpcs(dt);
     this.trackGeography();
     this.drainOutbox();
+    this.fx.update(dt);
 
     if (this.debugVisible) this.refreshDebug();
   }
