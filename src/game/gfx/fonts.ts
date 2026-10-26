@@ -3,20 +3,20 @@ import type Phaser from "phaser";
 /**
  * One place to change every font in the game.
  *
- * Ringbearer is a decorative display face - beautiful for titles, genuinely
- * hard to read below about 20px. So the rule here is:
+ * Cinzel Decorative is a decorative display face - beautiful for titles,
+ * harder to read below about 20px. So the rule here is:
  *
  *   FONT_DISPLAY -> titles, headings, speaker names (20px and up, never body copy)
  *   FONT_BODY    -> everything a player actually has to read
  *   FONT_MONO    -> the debug overlay and numeric readouts
  *
- * Swap FONT_DISPLAY to remove Ringbearer and the game still reads correctly.
+ * Both faces are SIL Open Font License, bundled from @fontsource (see CREDITS.md).
  */
 export const FONT_DISPLAY =
-  '"Ringbearer", "Palatino Linotype", "Book Antiqua", Georgia, serif';
+  '"Cinzel Decorative", "Palatino Linotype", "Book Antiqua", Georgia, serif';
 
 export const FONT_BODY =
-  'Georgia, "Palatino Linotype", "Times New Roman", serif';
+  '"EB Garamond", Georgia, "Palatino Linotype", "Times New Roman", serif';
 
 export const FONT_MONO =
   '"Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, monospace';
@@ -78,8 +78,11 @@ export async function waitForDisplayFont(): Promise<boolean> {
   if (typeof document === "undefined" || !document.fonts) return false;
   try {
     const faces = await Promise.all([
-      document.fonts.load('32px "Ringbearer"'),
-      document.fonts.load('bold 32px "Ringbearer"'),
+      document.fonts.load('32px "Cinzel Decorative"'),
+      document.fonts.load('bold 32px "Cinzel Decorative"'),
+      document.fonts.load('16px "EB Garamond"'),
+      document.fonts.load('italic 16px "EB Garamond"'),
+      document.fonts.load('bold 16px "EB Garamond"'),
     ]);
     await document.fonts.ready;
     return faces.some((list) => list.length > 0);

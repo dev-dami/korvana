@@ -1,28 +1,21 @@
 import Phaser from "phaser";
 
 import { applyCameraZoom, TEXT_RES, viewHeight, viewWidth } from "../display";
-import { buildCharacters, FRAME_H, FRAME_W, sheetKey } from "../gfx/characters";
+import { buildCharacters } from "../gfx/characters";
 import { bodyText, displayText, waitForDisplayFont } from "../gfx/fonts";
 import { buildTiles } from "../gfx/tiles";
 import { GameState } from "../state/GameState";
 import { SaveSystem } from "../systems/SaveSystem";
 
 /**
- * Generates the procedural textures the game needs, loads the hero sheet,
- * waits for the display font, then shows the title card.
+ * Generates the procedural textures the game needs, waits for the display
+ * font, then shows the title card.
  */
 export class BootScene extends Phaser.Scene {
   private started = false;
 
   constructor() {
     super("boot");
-  }
-
-  preload(): void {
-    this.load.spritesheet(sheetKey("hero"), "/assets/characters/hero-sheet.png", {
-      frameWidth: FRAME_W,
-      frameHeight: FRAME_H,
-    });
   }
 
   async create(): Promise<void> {

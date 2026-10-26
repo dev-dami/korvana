@@ -11,7 +11,6 @@ export const FRAME_H = ART_H * SCALE;
 
 const FRAMES = 3;
 const DIRS: Direction[] = ["down", "left", "right", "up"];
-const GENERATED_SHEET_LOOKS = new Set(["hero"]);
 
 /**
  * Pixel art authored as strings. Each character maps to a palette entry:
@@ -413,7 +412,7 @@ function registerAnims(scene: Phaser.Scene, look: CharacterLook): void {
 
 export function buildCharacters(scene: Phaser.Scene): void {
   for (const look of Object.values(LOOKS)) {
-    if (!GENERATED_SHEET_LOOKS.has(look.key)) buildSheet(scene, look);
+    buildSheet(scene, look);
     registerAnims(scene, look);
   }
 }

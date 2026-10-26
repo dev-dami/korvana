@@ -1,24 +1,6 @@
-/*
- * Ringbearer is (c) Pete Klassen, 2002 - private use only, no commercial use,
- * and redistribution only with the complete original archive (which is kept
- * alongside it in public/assets/fonts/ringbearer/).
- *
- * It is a DISPLAY face: decorative and hard to read at small sizes, so it is
- * only ever used for titles and names. Body copy uses the legible stack in
- * src/game/gfx/fonts.ts. To drop Ringbearer, remove this block and change
- * FONT_DISPLAY - nothing else needs to move.
- */
-@font-face {
-  font-family: "Ringbearer";
-  src: url("/assets/fonts/ringbearer/RINGM___.TTF") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   color-scheme: dark;
-  font-family: Georgia, "Palatino Linotype", "Times New Roman", serif;
+  font-family: "EB Garamond", Georgia, "Palatino Linotype", "Times New Roman", serif;
   --korvana-ink: #07080b;
   --korvana-gold: #e9d9a6;
 }
