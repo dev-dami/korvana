@@ -31,7 +31,7 @@ const TOP = 14;
  * low health the screen edges pulse red.
  */
 export class Hud extends UiComponent {
-  private tint!: Phaser.GameObjects.Graphics;
+  private wound!: Phaser.GameObjects.Graphics;
   private plate!: Frame;
   private clockPlate!: Frame;
   private bars!: Phaser.GameObjects.Graphics;
@@ -55,9 +55,7 @@ export class Hud extends UiComponent {
     this.portraitLook = "";
     this.healthTrail = 1;
     this.manaTrail = 1;
-    // The day/night wash belongs to the world, not the HUD, so it is not in
-    // the HUD layer: it stays while a cutscene hides the plates.
-    this.tint = this.track(this.scene.add.graphics().setDepth(-100), false);
+    this.wound = this.track(this.scene.add.graphics().setDepth(0));
 
     this.plate = this.frame("ink", 1);
     this.clockPlate = this.frame("plaque", 1);
@@ -89,7 +87,7 @@ export class Hud extends UiComponent {
   update(width: number, height: number, time: number): void {
     const dt = this.lastTime ? Math.min(0.1, (time - this.lastTime) / 1000) : 0;
     this.lastTime = time;
-    this.drawDayNight(width, height, time);
+    this.drawWound(width, height, time);
     this.drawPlate(width, dt, time);
     this.drawClock(width);
   }
@@ -202,44 +200,29 @@ export class Hud extends UiComponent {
     this.goldText.setPosition(cx - 12, sy).setText(`${state.player.gold}`);
   }
 
-  private drawDayNight(width: number, height: number, time: number): void {
-    const state = this.world.state;
-    const fraction = state.dayFraction;
-    const daylight = Math.max(0, Math.sin((fraction - 0.25) * Math.PI * 2) * 0.5 + 0.5);
-    // The Scar keeps its own weather: it is always dimmer than it should be.
-    const scarred = this.world.world.biomeNameAtPixel(this.world.player.x, this.world.player.y) === "scar";
-    const ceiling = scarred ? 0.5 : 0.36;
-    const alpha = Math.min(ceiling, (1 - daylight) * ceiling + (scarred ? 0.16 : 0));
-
-    this.tint.clear();
-    if (alpha > 0.01) {
-      const tone = Phaser.Display.Color.Interpolate.ColorWithColor(
-        new Phaser.Display.Color(22, 30, 68),
-        new Phaser.Display.Color(46, 38, 82),
-        100,
-        Math.round(daylight * 100),
-      );
-      this.tint.fillStyle(Phaser.Display.Color.GetColor(tone.r, tone.g, tone.b), alpha);
-      this.tint.fillRect(0, 0, width, height);
-    }
-
-    // Wounded: the edges of the world close in and pulse.
-    const hf = state.player.health / state.player.maxHealth;
-    if (hf < 0.35 && hf > 0) {
-      const strength = (0.35 - hf) / 0.35;
-      const beat = 0.55 + Math.max(0, Math.sin(time / 180)) * 0.45;
-      const a = Math.min(0.55, strength * 0.6 * beat);
-      const band = Math.min(width, height) * 0.16;
-      const red = 0x6a0a0a;
-      this.tint.fillGradientStyle(red, red, red, red, a, a, 0, 0);
-      this.tint.fillRect(0, 0, width, band);
-      this.tint.fillGradientStyle(red, red, red, red, 0, 0, a, a);
-      this.tint.fillRect(0, height - band, width, band);
-      this.tint.fillGradientStyle(red, red, red, red, a, 0, a, 0);
-      this.tint.fillRect(0, 0, band, height);
-      this.tint.fillGradientStyle(red, red, red, red, 0, a, 0, a);
-      this.tint.fillRect(width - band, 0, band, height);
-    }
+  /**
+   * Wounded: the edges of the screen close in and pulse red. (Day and night
+   * belong to the world camera's lighting layer, not the HUD.)
+   */
+  private drawWound(width: number, height: number, time: number): void {
+    const g = this.wound;
+    g.clear();
+    const player = this.world.state.player;
+    const hf = player.health / player.maxHealth;
+    if (hf >= 0.35 || hf <= 0) return;
+    const strength = (0.35 - hf) / 0.35;
+    const beat = 0.55 + Math.max(0, Math.sin(time / 180)) * 0.45;
+    const a = Math.min(0.55, strength * 0.6 * beat);
+    const band = Math.min(width, height) * 0.16;
+    const red = 0x6a0a0a;
+    g.fillGradientStyle(red, red, red, red, a, a, 0, 0);
+    g.fillRect(0, 0, width, band);
+    g.fillGradientStyle(red, red, red, red, 0, 0, a, a);
+    g.fillRect(0, height - band, width, band);
+    g.fillGradientStyle(red, red, red, red, a, 0, a, 0);
+    g.fillRect(0, 0, band, height);
+    g.fillGradientStyle(red, red, red, red, 0, a, 0, a);
+    g.fillRect(width - band, 0, band, height);
   }
 
   /** The control reminder, kept in one place for the pause menu and docs. */
