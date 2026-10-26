@@ -54,13 +54,13 @@ export class PostFx {
       if (on) {
         // Darker scenes bloom from a lower threshold: a torch at night should
         // flare, sunlit snow at noon should not.
-        const edge = 0.82 - look.bloom * 0.3;
+        const edge = 0.9 - look.bloom * 0.28;
         this.bloom.threshold.setEdge(edge, 1);
         this.bloom.parallelFilters.blend.amount = 0.35 + look.bloom * 0.6;
       }
     }
 
-    if (this.vignette) this.vignette.strength = 0.08 + look.vignette * 0.22;
+    if (this.vignette) this.vignette.strength = 0.03 + look.vignette * 0.12;
   }
 
   /**

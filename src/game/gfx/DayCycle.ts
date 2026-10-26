@@ -36,8 +36,8 @@ export interface Look {
 
 /** Ambient light through the day. Hours, then colour. */
 const SKY: Array<[number, RGB]> = [
-  [0, 0x43528a],
-  [4.4, 0x43528a],
+  [0, 0x4c5a92],
+  [4.4, 0x4c5a92],
   [5.4, 0x6a5f96],
   [6.2, 0xd99a8a],
   [7.0, 0xffd6a6],
@@ -45,11 +45,11 @@ const SKY: Array<[number, RGB]> = [
   [10.5, 0xffffff],
   [15.5, 0xffffff],
   [17.0, 0xfff0d8],
-  [18.2, 0xffd4a8],
-  [19.0, 0xf4ae94],
+  [18.2, 0xffdcb8],
+  [19.0, 0xf0b8a2],
   [19.8, 0x8a74a8],
-  [20.9, 0x43528a],
-  [24, 0x43528a],
+  [20.9, 0x4c5a92],
+  [24, 0x4c5a92],
 ];
 
 function skyAt(hour: number): RGB {
@@ -98,7 +98,7 @@ const BIOMES: Record<Biome, BiomeLook> = {
   highland: { filter: 0xf0f4fa, grade: g(0.94, 1.06, 1.0, 0.97, 0.99, 1.04), bloom: 0, vignette: 0.34, glow: 0 },
   peak: { filter: 0xf4f8ff, grade: g(0.9, 1.04, 1.0, 0.96, 0.99, 1.06), bloom: 0.05, vignette: 0.34, glow: 0 },
   // The Scar: burnt out, drained of colour, a faint ember warmth left in it.
-  scar: { filter: 0xb0a098, grade: g(0.5, 1.14, 1.0, 1.08, 0.97, 0.92), bloom: 0.3, vignette: 0.6, glow: 0x4a3430 },
+  scar: { filter: 0xb0a098, grade: g(0.5, 1.14, 1.0, 1.08, 0.97, 0.92), bloom: 0.3, vignette: 0.6, glow: 0x544038 },
   // Underground: cold and dark, so every torch is an event.
   crypt: { filter: 0xffffff, grade: g(0.82, 1.1, 1.0, 0.95, 0.99, 1.08), bloom: 0.45, vignette: 0.55, glow: 0 },
 };
@@ -169,10 +169,11 @@ export class DayCycle {
     look.grade.saturation = b.grade.saturation * nightSat;
     look.grade.contrast = b.grade.contrast;
     look.grade.brightness = b.grade.brightness;
-    look.grade.r = b.grade.r * lerp(1, 1.04, look.golden);
+    look.grade.r = b.grade.r * lerp(1, 1.02, look.golden);
     look.grade.g = b.grade.g;
-    look.grade.b = b.grade.b * lerp(1, 0.94, look.golden);
-    look.bloom = Math.min(1, b.bloom + look.darkness * 0.55);
+    look.grade.b = b.grade.b * lerp(1, 0.97, look.golden);
+    // Bloom belongs to the night and to fire: daylight sand must not glow.
+    look.bloom = Math.min(1, b.bloom + Math.max(0, look.darkness - 0.3) * 0.9);
     look.vignette = b.vignette + look.night * 0.12;
     look.biome = this.biome;
     return look;

@@ -300,6 +300,27 @@ export function buildFxTextures(scene: Phaser.Scene): void {
     pixels(scene, "fx_star", p);
   }
 
+  {
+    // A sun shaft: a soft vertical band, brightest in the middle, feathered
+    // at both ends so it never shows where it starts or stops.
+    const { tex, ctx } = canvasTex(scene, "fx_shaft", 48, 220);
+    const across = ctx.createLinearGradient(0, 0, 48, 0);
+    across.addColorStop(0, "rgba(255,255,255,0)");
+    across.addColorStop(0.5, "rgba(255,255,255,0.9)");
+    across.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = across;
+    ctx.fillRect(0, 0, 48, 220);
+    ctx.globalCompositeOperation = "destination-in";
+    const along = ctx.createLinearGradient(0, 0, 0, 220);
+    along.addColorStop(0, "rgba(0,0,0,0)");
+    along.addColorStop(0.3, "rgba(0,0,0,1)");
+    along.addColorStop(0.7, "rgba(0,0,0,1)");
+    along.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = along;
+    ctx.fillRect(0, 0, 48, 220);
+    commit({ tex, ctx });
+  }
+
   pixels(scene, "fx_wave_0", waveTexture(128, 1301, 70));
   pixels(scene, "fx_wave_1", waveTexture(96, 1302, 42));
 }

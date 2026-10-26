@@ -88,9 +88,9 @@ export class WorldFx {
     const p = this.personal;
     p.x = player.x;
     p.y = player.y - 12;
-    p.radius = crypt ? 200 : 140;
+    p.radius = crypt ? 200 : 170;
     p.color = crypt ? 0xffd49a : 0xd8e0ff;
-    p.intensity = crypt ? 0.75 : Math.max(0, look.darkness - 0.2) * 0.75;
+    p.intensity = crypt ? 0.75 : Math.max(0, look.darkness - 0.15) * 0.8;
 
     this.lighting.update(
       dt,

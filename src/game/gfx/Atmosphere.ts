@@ -16,13 +16,25 @@ import type { FrameLight } from "./Lighting";
  * few more, kinds above it simply stop respawning, so changes fade in and out.
  */
 
-type Kind = "mote" | "firefly" | "leaf" | "mist" | "snow" | "ash" | "ember" | "dust" | "drip" | "cloud" | "bird";
+type Kind =
+  | "mote"
+  | "firefly"
+  | "leaf"
+  | "mist"
+  | "snow"
+  | "ash"
+  | "ember"
+  | "dust"
+  | "drip"
+  | "cloud"
+  | "bird"
+  | "shaft";
 
-const KINDS: Kind[] = ["mote", "firefly", "leaf", "mist", "snow", "ash", "ember", "dust", "drip", "cloud", "bird"];
+const KINDS: Kind[] = ["mote", "firefly", "leaf", "mist", "snow", "ash", "ember", "dust", "drip", "cloud", "bird", "shaft"];
 
 const POOL = 300;
 /** Glowing kinds draw above the light map; everything else is lit by it. */
-const GLOW: ReadonlySet<Kind> = new Set<Kind>(["mote", "firefly", "ember"]);
+const GLOW: ReadonlySet<Kind> = new Set<Kind>(["mote", "firefly", "ember", "shaft"]);
 const DEPTH_LIT = DEPTH.weather - 150;
 const DEPTH_GLOW = DEPTH.weather - 40;
 
@@ -46,7 +58,7 @@ interface Particle {
 type Budget = Record<Kind, number>;
 
 function emptyBudget(): Budget {
-  return { mote: 0, firefly: 0, leaf: 0, mist: 0, snow: 0, ash: 0, ember: 0, dust: 0, drip: 0, cloud: 0, bird: 0 };
+  return { mote: 0, firefly: 0, leaf: 0, mist: 0, snow: 0, ash: 0, ember: 0, dust: 0, drip: 0, cloud: 0, bird: 0, shaft: 0 };
 }
 
 /** How much of each kind a biome wants, before the hour scales it. */
@@ -55,7 +67,7 @@ const BIOME_BUDGET: Partial<Record<Biome, Partial<Budget>>> = {
   beach: { mote: 8, cloud: 3, bird: 1 },
   ocean: { cloud: 3, bird: 1 },
   shallows: { cloud: 3, bird: 1 },
-  forest: { mote: 18, firefly: 40, leaf: 18 },
+  forest: { mote: 18, firefly: 40, leaf: 18, shaft: 5 },
   marsh: { mote: 8, firefly: 30, mist: 12 },
   highland: { mote: 6, cloud: 2, mist: 3 },
   peak: { snow: 110, mist: 2 },
@@ -175,6 +187,9 @@ export class Atmosphere {
         case "cloud":
           b[k] = want * day;
           break;
+        case "shaft":
+          b[k] = day > 0.7 ? want : 0;
+          break;
         case "mist":
           // Mist pools at night and lingers into the morning.
           b[k] = want * (0.5 + look.night * 0.5 + look.golden * 0.6);
@@ -274,6 +289,17 @@ export class Atmosphere {
         p.vy = -(16 + Math.random() * 26);
         p.max = 3 + Math.random() * 4;
         p.alpha = 1;
+        break;
+      case "shaft":
+        // Sunlight slanting down through gaps in the canopy.
+        img.setTexture("fx_shaft").setScale(1 + Math.random() * 0.8, 1.4 + Math.random() * 0.8).setRotation(-0.55);
+        img.setTint(look.golden > 0.3 ? 0xffc27a : 0xfff0c8).setBlendMode(Phaser.BlendModes.ADD);
+        p.x = rx();
+        p.y = ry();
+        p.vx = 3 + Math.random() * 3;
+        p.vy = 0;
+        p.max = 10 + Math.random() * 8;
+        p.alpha = 0.14 + Math.random() * 0.1 + look.golden * 0.08;
         break;
       case "dust":
         img.setTexture("fx_dot").setScale(Math.random() > 0.7 ? 1 : 0.5).setTint(0xd8d0c0);
@@ -384,6 +410,10 @@ export class Atmosphere {
         if (lightCount < 24 && a > 0.5) lightCount = this.addLight(lightCount, p.x, p.y, 26, 0xff7a30, 0.3 * a);
         break;
       }
+      case "shaft":
+        p.x += p.vx * dt;
+        img.setAlpha(p.alpha * Math.min(1, p.life * 0.8, (p.max - p.life) * 0.8) * (0.8 + 0.2 * Math.sin(this.time * 0.7 + p.phase)));
+        break;
       case "dust":
         p.x += (p.vx + Math.sin(this.time * 0.4 + p.phase) * 2) * dt;
         p.y += (p.vy + Math.cos(this.time * 0.3 + p.phase) * 2) * dt;
