@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 
+import { DEPTH } from "../config";
 import { TEXT_RES } from "../display";
 import { FONT_BODY, FONT_DISPLAY } from "./fonts";
 
@@ -13,6 +14,12 @@ export interface FloatOptions {
   drift?: number;
   stroke?: number;
 }
+
+/**
+ * Floating text sits above the light map and the glow effects: a damage
+ * number has to stay readable at midnight in a crypt.
+ */
+const TEXT_DEPTH = DEPTH.weather - 10;
 
 /**
  * Rising, fading text - damage numbers, "Miss", quest pings. Outlined so it
@@ -42,7 +49,7 @@ export function floatText(
     })
     .setOrigin(0.5, 1)
     .setResolution(TEXT_RES)
-    .setDepth(y + 900);
+    .setDepth(TEXT_DEPTH);
 
   text.setStroke("#0a0b10", stroke);
   text.setShadow(0, 2, "#000000", 2, false, true);
@@ -81,7 +88,7 @@ export function calloutText(
     })
     .setOrigin(0.5, 1)
     .setResolution(TEXT_RES)
-    .setDepth(y + 950)
+    .setDepth(TEXT_DEPTH + 1)
     .setScale(0.85);
 
   text.setStroke("#0a0b10", 5);
