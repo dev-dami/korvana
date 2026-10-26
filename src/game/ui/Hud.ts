@@ -227,7 +227,7 @@ export class Hud extends UiComponent {
 
   /** The control reminder, kept in one place for the pause menu and docs. */
   static readonly HINTS =
-    "WASD move   SHIFT sprint   C dash   Z light   X heavy   SPACE cast   1-6 spell   E talk   I satchel   J journal   M spellbook   T weapon   Q tonic   P pause";
+    "WASD move   SHIFT sprint   C dash   Z light   X heavy   SPACE cast   1-6 spell   E talk   I satchel   J journal   M spellbook   T weapon   Q tonic   N sound   P pause";
   static readonly COMPACT_HINTS = "SHIFT sprint   C dash   SPACE cast   E talk   P pause";
 }
 

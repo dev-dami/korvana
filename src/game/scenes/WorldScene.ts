@@ -269,6 +269,9 @@ export class WorldScene extends Phaser.Scene {
     this.world.update(this.player.x, this.player.y);
     this.combat.update(dt);
 
+    if (pressed.has("mute")) {
+      this.toast(this.audio.toggleMute() ? "Sound off." : "Sound on.");
+    }
     if (pressed.has("debug")) {
       this.debugVisible = !this.debugVisible;
       this.debugText.setVisible(this.debugVisible);
@@ -364,9 +367,13 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // Keep the respawn point separate from the loaded position, so a save made
-    // deep in the world does not silently move your home.
-    const start = this.startSpot();
-    this.state.setCheckpoint(start.x, start.y);
+    // deep in the world does not silently move your home. Only a game with no
+    // checkpoint yet gets the Academy: overwriting it here would throw away the
+    // checkpoints the story hands out (Keeper's Rest and the like) on every load.
+    if (!this.state.checkpoint) {
+      const start = this.startSpot();
+      this.state.setCheckpoint(start.x, start.y);
+    }
 
     this.state.data.position = { x: this.homeX, y: this.homeY };
     this.player = new Player(this, this.homeX, this.homeY);
@@ -526,6 +533,7 @@ export class WorldScene extends Phaser.Scene {
     bind(C.C, "dash");
     bind(C.BACKTICK, "debug");
     bind(C.ESC, "escape");
+    bind(C.N, "mute");
 
     this.spellKeys = [C.ONE, C.TWO, C.THREE, C.FOUR, C.FIVE, C.SIX].map((code, index) =>
       bind(code, `spell${index}`),
