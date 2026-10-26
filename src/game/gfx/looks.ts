@@ -84,6 +84,12 @@ export interface Look {
   cape?: string;
 
   hunch?: boolean;
+  /** Lines on the face in the portrait. */
+  age?: "old";
+  /** A device worn on the chest. The Keepers bear a lantern. */
+  sigil?: "lantern";
+  /** Carries a lit hand-lantern. */
+  lantern?: boolean;
   lower?: Lower;
   /** Overall opacity, for ghosts. */
   alpha?: number;
@@ -156,6 +162,7 @@ export const LOOKS: Record<string, Look> = {
   // --- Faculty --------------------------------------------------------------
   headmistress: {
     key: "headmistress",
+    age: "old",
     body: "humanoid",
     size: "tall",
     skin: "#e6bc9c",
@@ -176,6 +183,7 @@ export const LOOKS: Record<string, Look> = {
   },
   professor: {
     key: "professor",
+    age: "old",
     body: "humanoid",
     size: "adult",
     skin: "#ddb088",
@@ -218,6 +226,7 @@ export const LOOKS: Record<string, Look> = {
   },
   librarian: {
     key: "librarian",
+    age: "old",
     body: "humanoid",
     size: "tall",
     skin: "#e3b894",
@@ -320,23 +329,27 @@ export const LOOKS: Record<string, Look> = {
     satchel: "#7a5532",
     holster: true,
   },
+  // Keeper Ilse: the last of the Nine, old and weathered, in the ash-grey
+  // robes of the order with its lantern sigil, carrying a light of her own.
   keeper: {
     key: "keeper",
     body: "humanoid",
     size: "tall",
-    skin: "#d6b49c",
-    eye: "#8fd4ff",
+    skin: "#d2ab90",
+    eye: "#93a8b8",
     brows: "soft",
+    age: "old",
     hair: "#ecebe6",
     hairStyle: "long",
     hat: "hood",
-    hatColor: "#8a867c",
+    hatColor: "#6c6862",
     outfit: "gown",
-    robe: "#a6a298",
-    trim: "#8fd4ff",
-    inner: "#d8d4ca",
-    accent: "#8fd4ff",
-    boots: "#4a463e",
+    robe: "#8e8a82",
+    trim: "#c9b27a",
+    inner: "#bdb8ae",
+    sigil: "lantern",
+    lantern: true,
+    boots: "#3e3a34",
   },
   ghost: {
     key: "ghost",

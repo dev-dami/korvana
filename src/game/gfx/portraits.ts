@@ -187,12 +187,12 @@ function paintBust(look: Look): Pix {
       if (Math.abs(nx) > allowed) return null;
     }
     if (skull && ny > 0.55 && Math.abs(nx) > 0.6) return null;
-    const light = -nx * 0.5 - ny * 0.55 + 0.32;
+    const light = -nx * 0.42 - ny * 0.42 + 0.36;
     void x;
     void y;
-    if (light > 0.78) return T.skin.hi;
-    if (light < -0.5) return T.skin.deep;
-    if (light < -0.12) return T.skin.lo;
+    if (light > 0.8) return T.skin.hi;
+    if (light < -0.42) return T.skin.deep;
+    if (light < -0.04) return T.skin.lo;
     return T.skin.base;
   });
   // Ears.
@@ -323,6 +323,23 @@ function paintShoulders(p: Pix, look: Look, T: BustTones, headCy: number): void 
     p.vline(ex, ey, ey + 4, e.hi);
     p.set(ex + 3, ey + 3, ramp(look.accent ?? look.trim).hi);
     p.set(ex + 4, ey + 3, ramp(look.accent ?? look.trim).base);
+  }
+  if (look.sigil === "lantern") {
+    // The Keepers' lantern sigil, embroidered on the breast.
+    const t = T.trim;
+    const lx = HX - 18;
+    const ly = top + 8;
+    p.ellipseWith(lx + 3, ly + 1, 2, 2, (nx, ny) => (nx * nx + ny * ny > 0.4 ? t.hi : null));
+    p.hline(lx, lx + 6, ly + 3, t.base);
+    p.hline(lx + 1, lx + 5, ly + 4, t.lo);
+    for (let y = ly + 5; y <= ly + 9; y++) {
+      p.set(lx + 1, y, t.base);
+      p.set(lx + 5, y, t.lo);
+      for (let x = lx + 2; x <= lx + 4; x++) p.glow(x, y, y < ly + 7 ? 0xfff0b0 : 0xffb850);
+    }
+    p.vline(lx + 3, ly + 5, ly + 9, t.lo);
+    p.glow(lx + 3, ly + 7, 0xffffff);
+    p.hline(lx, lx + 6, ly + 10, t.lo);
   }
   if (look.book) {
     const b = ramp(look.book);
@@ -544,6 +561,29 @@ function paintFace(p: Pix, look: Look, T: BustTones, eyeY: number): void {
       p.set(cx, eyeY + 5, blend(T.skin.base, 0xe06a6a, 0.25));
     }
   }
+  if (look.age === "old") {
+    // Lines at the eyes, under them, and from nose to mouth.
+    const line = blend(T.skin.base, T.skin.lo, 0.65);
+    for (const [fx, fy] of [
+      [20, eyeY - 1],
+      [20, eyeY + 1],
+      [43, eyeY - 1],
+      [43, eyeY + 1],
+      [23, eyeY + 3],
+      [24, eyeY + 3],
+      [39, eyeY + 3],
+      [40, eyeY + 3],
+      [HX - 5, eyeY + 6],
+      [HX - 5, eyeY + 7],
+      [HX - 6, eyeY + 8],
+      [HX + 4, eyeY + 6],
+      [HX + 4, eyeY + 7],
+      [HX + 5, eyeY + 8],
+    ] as const) {
+      p.set(fx, fy, line);
+    }
+    p.hline(HX - 4, HX + 3, eyeY - 8, line);
+  }
   if (look.key.startsWith("hero")) {
     // Wren's freckles.
     for (const [fx, fy] of [
@@ -742,10 +782,7 @@ function paintHoodRim(p: Pix, look: Look, T: BustTones, headCy: number, eyeY: nu
       p.set(HX + 11, y, H.base);
     }
   }
-  // The trim glows along the hood's edge.
-  if (look.key === "keeper") {
-    p.ellipseWith(HX, headCy + 3, 12.5, 14, (nx, ny) => (nx * nx + ny * ny > 0.86 && ny < 0.6 ? T.trim.base : null));
-  }
+
 }
 
 function paintBeard(p: Pix, look: Look, eyeY: number): void {

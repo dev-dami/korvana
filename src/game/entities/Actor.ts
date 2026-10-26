@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 
 import { DEPTH } from "../config";
-import { animKey, attackKey, castKey, idleKey, sheetKey } from "../gfx/characters";
+import { animKey, attackKey, castKey, idleKey, LOOKS, sheetKey } from "../gfx/characters";
 import type { Direction } from "../types";
 import type { WorldManager } from "../world/WorldManager";
 
@@ -80,6 +80,16 @@ export class Actor {
       .setDepth(y);
 
     this.playIdle("down");
+    this.fitShadow();
+  }
+
+  /** Hovering things (ghosts, the lamp, bats) cast a smaller, fainter shadow. */
+  private fitShadow(): void {
+    const look = LOOKS[this.lookKey];
+    const floats = look?.floats === true;
+    const small = look?.body === "owl" || look?.body === "bat";
+    this.shadow.setScale(small ? 0.6 : floats ? 0.8 : look?.body === "spider" ? 1.25 : 1);
+    this.shadow.setAlpha(floats ? 0.3 : 0.55);
   }
 
   get alive(): boolean {
@@ -136,6 +146,7 @@ export class Actor {
     if (lookKey === this.lookKey || !this.scene.textures.exists(sheetKey(lookKey))) return;
     this.lookKey = lookKey;
     this.poseUntil = 0;
+    this.fitShadow();
     if (this.moving) this.playWalk(this.direction);
     else this.playIdle(this.direction);
   }

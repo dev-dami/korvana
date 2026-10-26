@@ -379,6 +379,30 @@ function paintRobeFront(layer: Pix, look: Look, m: Metrics): void {
     layer.set(CX - 5, m.shoulderY + 4, e.base);
     layer.set(CX - 4, m.shoulderY + 4, e.lo);
   }
+  if (look.sigil === "lantern") {
+    // The Keepers' lantern, stitched in pale brass with a lit heart.
+    const sy = m.shoulderY + 2;
+    layer.set(CX - 5, sy, T.trim.hi);
+    layer.hline(CX - 6, CX - 4, sy + 1, T.trim.base);
+    layer.set(CX - 6, sy + 2, T.trim.base);
+    layer.glow(CX - 5, sy + 2, 0xffc35a);
+    layer.set(CX - 4, sy + 2, T.trim.lo);
+    layer.hline(CX - 6, CX - 4, sy + 3, T.trim.lo);
+  }
+}
+
+/** A small hand-lantern hanging under a hand at (x, y). */
+function handLantern(p: Pix, x: number, y: number): void {
+  const brass = ramp("#b8862e");
+  p.set(x, y, brass.lo);
+  p.hline(x - 1, x + 1, y + 1, brass.hi);
+  p.set(x - 1, y + 2, brass.base);
+  p.glow(x, y + 2, 0xfff0b0);
+  p.set(x + 1, y + 2, brass.lo);
+  p.set(x - 1, y + 3, brass.base);
+  p.glow(x, y + 3, 0xffb040);
+  p.set(x + 1, y + 3, brass.lo);
+  p.hline(x - 1, x + 1, y + 4, brass.lo);
 }
 
 function paintArmorFront(layer: Pix, look: Look, m: Metrics, back: boolean): void {
@@ -532,6 +556,7 @@ function armsFrontal(p: Pix, look: Look, pose: Pose, m: Metrics, back: boolean):
     p.set(hx + 1, end + 1, side < 0 ? handC.base : handC.lo);
     p.set(hx + (side < 0 ? 0 : 1), end + 2, handC.lo);
     if (look.hunch) p.set(hx + (side < 0 ? 0 : 1), end + 3, handC.lo);
+    if (look.lantern && side < 0) handLantern(p, hx, end + 3);
 
     if (look.book && side < 0 && !back) {
       const b = ramp(look.book);
@@ -1017,7 +1042,7 @@ function paintUp(p: Pix, look: Look, pose: Pose, m: Metrics): void {
         const light = -nx * 0.55 - ny * 0.75;
         return light < -0.3 ? T.hair.lo : T.hair.base;
       });
-      if (style === "long") {
+      if (style === "long" && look.hat !== "hood") {
         trap(p, m.headCy, m.shoulderY + 6, CX - 7, CX + 6, CX - 6, CX + 5, (_x, y, t) =>
           y === m.shoulderY + 6 && t > 0.3 && t < 0.7 ? null : t < 0.25 ? T.hair.base : t > 0.7 ? T.hair.lo : T.hair.base,
         );
@@ -1280,6 +1305,7 @@ function sideArm(p: Pix, look: Look, m: Metrics, swing: number, back: boolean, p
   const hand = look.outfit === "armor" ? T.robe : T.skin;
   p.set(hx, hy + 1, back ? hand.lo : hand.base);
   p.set(hx, hy + 2, hand.lo);
+  if (look.lantern && !back) handLantern(p, hx, hy + 3);
   if (look.book && !back) {
     const b = ramp(look.book);
     p.rect(hx - 1, hy - 3, 4, 3, b.base);

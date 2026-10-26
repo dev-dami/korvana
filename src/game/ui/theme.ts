@@ -48,8 +48,9 @@ export const UI_DEPTH = {
   toast: 200,
   dialogue: 260,
   modal: 300,
-  pause: 400,
   cutscene: 500,
+  /** Pause blocks all input, so it must never hide under anything. */
+  pause: 600,
 } as const;
 
 // --- cameras ------------------------------------------------------------------
@@ -430,12 +431,16 @@ function paintParchment(ctx: CanvasRenderingContext2D, w: number, h: number): vo
     ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
     ctx.stroke();
   }
-  for (let i = 0; i < 6; i++) {
-    ctx.globalAlpha = 0.035;
-    ctx.fillStyle = "#8a5a2a";
-    ctx.beginPath();
-    ctx.arc(rnd() * w, rnd() * h, 10 + rnd() * 40, 0, Math.PI * 2);
-    ctx.fill();
+  // Foxing: a few soft age-spots that fade out at their edges.
+  for (let i = 0; i < 5; i++) {
+    const fx = rnd() * w;
+    const fy = rnd() * h;
+    const fr = 14 + rnd() * 36;
+    const spot = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr);
+    spot.addColorStop(0, "rgba(150,100,50,0.07)");
+    spot.addColorStop(1, "rgba(150,100,50,0)");
+    ctx.fillStyle = spot;
+    ctx.fillRect(fx - fr, fy - fr, fr * 2, fr * 2);
   }
   ctx.globalAlpha = 1;
 
@@ -620,11 +625,3 @@ export function veil(g: Phaser.GameObjects.Graphics, w: number, h: number, alpha
   g.fillRect(0, h - band, w, band);
 }
 
-// TEMP shims while the panels are rewritten.
-export function panel(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, radius = 6): void {
-  g.fillStyle(INK, 0.9);
-  g.fillRoundedRect(x, y, w, h, radius);
-}
-export function bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, f: number, c: number, t: number): void {
-  capsuleBar(g, x, y, w, h, f, c, t);
-}
