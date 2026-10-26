@@ -16,6 +16,10 @@ export const game = new Phaser.Game({
 
   backgroundColor: "#0b0d12",
 
+  // All sound comes from our own Web Audio engine (systems/AudioSystem.ts);
+  // Phaser's would only open a second, unused AudioContext.
+  audio: { noAudio: true },
+
   pixelArt: true,
   roundPixels: true,
 
