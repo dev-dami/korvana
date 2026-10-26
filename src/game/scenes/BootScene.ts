@@ -4,6 +4,7 @@ import { applyCameraZoom, TEXT_RES, viewHeight, viewWidth } from "../display";
 import { buildCharacters } from "../gfx/characters";
 import { bodyText, displayText, waitForDisplayFont } from "../gfx/fonts";
 import { buildTiles } from "../gfx/tiles";
+import { buildDungeonTiles } from "../gfx/dungeonTiles";
 import { GameState } from "../state/GameState";
 import { SaveSystem } from "../systems/SaveSystem";
 
@@ -21,6 +22,7 @@ export class BootScene extends Phaser.Scene {
   async create(): Promise<void> {
     applyCameraZoom(this);
     buildTiles(this);
+    buildDungeonTiles(this);
     buildCharacters(this);
 
     const saved = SaveSystem.load();

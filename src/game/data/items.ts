@@ -100,6 +100,42 @@ export const ITEMS: Record<string, ItemDef> = {
     value: 320,
     stackable: false,
   },
+
+  // --- Tomb relics, keys and pages (Levels & Tomb Mechanics workstream) ---
+  // Ids are binding (docs/DESIGN.md). The relics are claimed from pedestals,
+  // the pages hide behind secrets: three in each tomb.
+  wardens_lantern: {
+    id: "wardens_lantern",
+    name: "The Warden's Lantern",
+    description: "A Keeper's lantern of grey glass. Its thin light finds seams in stone where no seam should be.",
+    kind: "relic",
+    value: 0,
+    stackable: false,
+  },
+  ninefold_key: {
+    id: "ninefold_key",
+    name: "The Ninefold Key",
+    description: "Nine wards and no teeth. It opens nothing a locksmith made, and every seal a Keeper did.",
+    kind: "key",
+    value: 0,
+    stackable: false,
+  },
+  silent_bell: {
+    id: "silent_bell",
+    name: "The Silent Bell",
+    description: "A bell the size of a fist that makes no sound at all. Things that should not be awake find that unbearable.",
+    kind: "relic",
+    value: 0,
+    stackable: false,
+  },
+  keeper_page: {
+    id: "keeper_page",
+    name: "Keeper's Page",
+    description: "A leaf torn from one of the Nine Keepers' daybooks. Master Fennick would give a great deal to see it.",
+    kind: "book",
+    value: 30,
+    stackable: true,
+  },
 };
 
 export function itemList(): ItemDef[] {

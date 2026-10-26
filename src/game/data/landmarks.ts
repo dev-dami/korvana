@@ -37,6 +37,18 @@ export interface LandmarkDef {
    */
   forceBiome?: Biome;
   forceRadius?: number;
+  /**
+   * Where the forced circle is centred, in tiles from the origin. Defaults to
+   * the origin itself; a big structure sets it to its own middle so the region
+   * it forces sits under it rather than off its top-left corner.
+   */
+  forceCentre?: { dx: number; dy: number };
+  /**
+   * A rectangular forced region instead of a wobbling circle, in tiles from the
+   * origin. Underground levels use this: a crypt has to be solid rock right up
+   * to its authored walls, and a noisy edge would cut rooms in half.
+   */
+  forceRect?: { x: number; y: number; w: number; h: number };
   /** Ground forced under the footprint, so a landmark is never in water. */
   forceGround?: GroundTile;
   /**
@@ -63,12 +75,14 @@ export const LANDMARKS: LandmarkDef[] = [
     name: "The Arrival Grounds",
     tx: 4,
     ty: 6,
-    structure: "great_hall",
+    // The Academy's keep, towers and courtyard (data/levels/grounds.ts).
+    structure: "academy_castle",
     forceBiome: "meadow",
-    forceRadius: 16,
-    safeRadius: 900,
+    forceRadius: 33,
+    forceCentre: { dx: 19, dy: 16 },
+    safeRadius: 1300,
     lore: "korvana",
-    pickups: [{ id: "lesser_tonic", dx: 15, dy: 12 }],
+    pickups: [{ id: "lesser_tonic", dx: 9, dy: 18 }],
   },
   {
     id: "treeline",
@@ -162,16 +176,111 @@ export const LANDMARKS: LandmarkDef[] = [
       { id: "lesser_tonic", dx: 9, dy: 3 },
     ],
   },
+
+  // --- Tomb mouths on the surface (data/levels/grounds.ts) ---
+  {
+    // Deep in the north-western forest, on the far side of the Treeline.
+    id: "barrow_entrance",
+    name: "The Thornroot Barrow",
+    tx: -112,
+    ty: -150,
+    structure: "barrow_mound",
+    forceBiome: "forest",
+    forceRadius: 14,
+    forceCentre: { dx: 4, dy: 4 },
+    safeRadius: 300,
+  },
+  {
+    // A cliff in a pocket of highland north-east of the Academy, short of the waystone.
+    id: "reliquary_entrance",
+    name: "The Skyfall Steps",
+    tx: 122,
+    ty: -80,
+    structure: "reliquary_stair",
+    forceBiome: "highland",
+    forceRadius: 12,
+    forceCentre: { dx: 4, dy: 3 },
+    safeRadius: 300,
+  },
+
+  // --- Underground (y >= 3000). Each level sits in a rectangle of solid rock
+  // and only its authored floors are walkable. They are 300 tiles apart so
+  // their spawn rules and safe pockets never overlap. ---
+  {
+    id: "academy_interior",
+    name: "Korvana Academy",
+    tx: 0,
+    ty: 3000,
+    structure: "academy_interior",
+    forceBiome: "crypt",
+    forceRect: { x: -48, y: -40, w: 154, h: 128 },
+    // Covers the whole interior: nothing hunts students in their own halls.
+    safeRadius: 4200,
+  },
+  {
+    id: "undercroft",
+    name: "The Undercroft",
+    tx: 300,
+    ty: 3000,
+    structure: "undercroft",
+    forceBiome: "crypt",
+    forceRect: { x: -48, y: -40, w: 152, h: 124 },
+    safeRadius: 300,
+  },
+  {
+    // Zone: the Undercroft's relic chamber.
+    id: "undercroft_heart",
+    name: "The Heart of the Undercroft",
+    tx: 335,
+    ty: 3034,
+    safeRadius: 220,
+  },
+  {
+    id: "thornroot_barrow",
+    name: "The Thornroot Barrow",
+    tx: 600,
+    ty: 3000,
+    structure: "thornroot_barrow",
+    forceBiome: "crypt",
+    forceRect: { x: -48, y: -40, w: 162, h: 116 },
+    safeRadius: 300,
+  },
+  {
+    // Zone: the Barrow's relic chamber.
+    id: "barrow_heart",
+    name: "The Barrow Heart",
+    tx: 632,
+    ty: 3020,
+    safeRadius: 220,
+  },
+  {
+    id: "skyfall_reliquary",
+    name: "The Skyfall Reliquary",
+    tx: 900,
+    ty: 3000,
+    structure: "skyfall_reliquary",
+    forceBiome: "crypt",
+    forceRect: { x: -48, y: -40, w: 160, h: 122 },
+    safeRadius: 300,
+  },
+  {
+    // Zone: the Reliquary's relic chamber.
+    id: "reliquary_heart",
+    name: "The Reliquary Heart",
+    tx: 945,
+    ty: 3020,
+    safeRadius: 220,
+  },
 ];
 
 export function landmarkById(id: string): LandmarkDef | undefined {
   return LANDMARKS.find((l) => l.id === id);
 }
 
-/** Where a new game begins: just outside the great hall door. */
+/** Where a new game begins: in the Academy courtyard (spot `academy_gate`). */
 export const START_LANDMARK = "arrival_grounds";
 
 /** Landmarks that override the terrain beneath themselves — the only ones the world model cares about. */
 export const TERRAIN_LANDMARKS = LANDMARKS.filter(
-  (l) => l.forceRadius && (l.forceBiome || l.forceGround),
+  (l) => (l.forceRadius || l.forceRect) && (l.forceBiome || l.forceGround),
 );

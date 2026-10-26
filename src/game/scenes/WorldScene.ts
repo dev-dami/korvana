@@ -34,6 +34,8 @@ import { StoryDirector } from "../systems/StoryDirector";
 import { AudioSystem } from "../systems/AudioSystem";
 import { zoneForBiome } from "../audio/zones";
 import { LightRegistry } from "../gfx/lights";
+import { levelMusicAt } from "../data/levels";
+import { MechanismSystem } from "../systems/MechanismSystem";
 import type { GameState } from "../state/GameState";
 import { TransitionManager } from "../world/TransitionManager";
 import { WorldManager } from "../world/WorldManager";
@@ -74,6 +76,8 @@ export class WorldScene extends Phaser.Scene {
   enemies: Enemy[] = [];
   /** Runtime light sources (braziers, spells, lanterns). See gfx/lights.ts. */
   readonly lightRegistry = new LightRegistry();
+  /** Plates, gates, traps and relics in the Academy and the tombs. */
+  mechanisms!: MechanismSystem;
 
   private interaction!: InteractionSystem;
   private effectRunner!: EffectRunner;
@@ -173,6 +177,11 @@ export class WorldScene extends Phaser.Scene {
     this.npcObstacles = [...this.npcs, this.player];
 
     this.interaction = new InteractionSystem(this, this.player);
+    this.mechanisms = new MechanismSystem(this, {
+      hurt: (amount) => this.hurtPlayer(amount),
+      toast: (message) => this.toast(message),
+      npcTargeted: () => this.interaction.target !== null,
+    });
     this.bindInput();
 
     const camera = this.cameras.main;
@@ -224,6 +233,7 @@ export class WorldScene extends Phaser.Scene {
     this.pickups.clear();
     this.cutscenes.clear();
     this.gameEvents.clear();
+    this.mechanisms.destroy();
     this.world.destroy();
     // The audio engine is game-wide and outlives a scene restart, so the music
     // carries on through a save load rather than cutting out.
@@ -319,6 +329,10 @@ export class WorldScene extends Phaser.Scene {
     ) {
       this.interaction.hide();
     }
+    this.mechanisms.update(
+      dt,
+      !(this.dialogue.active || this.inventoryOpen || this.journalOpen || this.spellbookOpen || this.cutscenes.active),
+    );
 
     this.maintainEnemyPopulation(dt);
     this.pollNpcs(dt);
@@ -357,11 +371,12 @@ export class WorldScene extends Phaser.Scene {
     this.player = new Player(this, this.homeX, this.homeY);
   }
 
-  /** The arrival grounds' courtyard, in front of the great hall door. */
+  /** The Academy courtyard (spot `academy_gate`), in front of the great door. */
   private startSpot(): { x: number; y: number } {
-    const landmark = landmarkById(START_LANDMARK);
-    const x = ((landmark?.tx ?? 4) + 5) * TILE;
-    const y = ((landmark?.ty ?? 6) + 10) * TILE;
+    const spot = spotById("academy_gate");
+    const host = landmarkById(spot?.landmark ?? START_LANDMARK);
+    const x = ((host?.tx ?? 4) + (spot?.dx ?? 5)) * TILE + TILE / 2;
+    const y = ((host?.ty ?? 6) + (spot?.dy ?? 10)) * TILE + TILE;
     return this.findFreeSpot(x, y, 6) ?? { x, y };
   }
 
@@ -527,6 +542,7 @@ export class WorldScene extends Phaser.Scene {
     if (pressed.has("interact")) {
       const target = this.interaction.target;
       if (target) this.talkTo(target);
+      else this.mechanisms.interact();
     }
   }
 
@@ -693,6 +709,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    this.mechanisms.onMelee();
     const heavy = kind === "heavy";
     this.audio.playAttack(heavy, outcome.hits > 0);
     calloutText(
@@ -891,6 +908,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.audio.playSpell(SPELLS[spellId]?.kind);
+    this.mechanisms.onSpellCast(spellId);
     this.story.report({ kind: "spell_cast", id: spellId });
   }
 
@@ -949,7 +967,7 @@ export class WorldScene extends Phaser.Scene {
     const nearAcademy =
       !!academy &&
       Math.hypot((academy.tx + 2) * TILE - px, (academy.ty + 2) * TILE - py) < ACADEMY_MUSIC_RADIUS;
-    this.audio.setZone(zoneForBiome(biome, nearAcademy));
+    this.audio.setZone(levelMusicAt(px, py) ?? zoneForBiome(biome, nearAcademy));
     for (const landmark of LANDMARKS) {
       if (this.announcedLandmarks.has(landmark.id)) continue;
       const lx = (landmark.tx + 2) * TILE;

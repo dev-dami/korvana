@@ -1,4 +1,5 @@
 import type { Biome, TileRole } from "../types";
+import { LEVEL_STRUCTURES } from "./levels";
 
 export interface StructureDef {
   id: string;
@@ -10,12 +11,20 @@ export interface StructureDef {
   /** Relative likelihood when several defs suit the biome. */
   weight: number;
   biomes: Biome[];
+  /**
+   * Per-structure glyphs, checked before the shared ones below. Authored levels
+   * (data/levels) carry a whole vocabulary here - bookshelves, banners, crypt
+   * walls - without every glyph having to mean the same thing everywhere.
+   */
+  legend?: Record<string, ResolvedTile>;
 }
 
 export interface ResolvedTile {
   role: TileRole;
   solid: boolean;
   texture: string;
+  /** Floor baked beneath a prop or torch sprite. Without it the ground shows through. */
+  under?: string;
 }
 
 const PROPS: Record<string, { texture: string; solid: boolean }> = {
@@ -29,6 +38,8 @@ const PROPS: Record<string, { texture: string; solid: boolean }> = {
 
 export function resolveTile(def: StructureDef, ch: string): ResolvedTile | null {
   if (ch === " ") return null;
+  const custom = def.legend?.[ch];
+  if (custom) return custom;
   if (ch === ",") return null;
   if (ch === "#") return { role: "wall", solid: true, texture: def.wall };
   if (ch === ".") return { role: "floor", solid: false, texture: def.floor };
@@ -192,6 +203,9 @@ export const STRUCTURES: StructureDef[] = [
     ],
   },
 ];
+
+// The Academy, its grounds and the tombs. Never placed at random (no biomes).
+STRUCTURES.push(...LEVEL_STRUCTURES);
 
 export function structureById(id: string): StructureDef | undefined {
   return STRUCTURES.find((s) => s.id === id);

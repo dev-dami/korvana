@@ -49,7 +49,22 @@ export class ChunkManager {
     return this.get(cx, cy);
   }
 
+  /**
+   * Runtime solidity for tiles that change after generation - gates, pushed
+   * blocks, braziers, secret walls. Owned by MechanismSystem; checked first so
+   * a closed portcullis blocks feet, bolts and enemies alike.
+   */
+  readonly overrides = new Map<number, boolean>();
+
+  static overrideKey(wx: number, wy: number): number {
+    return (wx + 0x8000) * 0x10000 + (wy + 0x8000);
+  }
+
   tileSolid(wx: number, wy: number): boolean {
+    if (this.overrides.size > 0) {
+      const forced = this.overrides.get(ChunkManager.overrideKey(wx, wy));
+      if (forced !== undefined) return forced;
+    }
     const cx = Math.floor(wx / CHUNK_TILES);
     const cy = Math.floor(wy / CHUNK_TILES);
     const chunk = this.get(cx, cy);

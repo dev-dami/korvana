@@ -286,6 +286,8 @@ export class TerrainGenerator {
           if (resolved.role === "floor" || resolved.role === "door") {
             chunk.overlay[i] = resolved.texture;
           } else {
+            // Authored levels give props a floor to stand on (see data/levels/build.ts).
+            if (resolved.under) chunk.overlay[i] = resolved.under;
             chunk.sprites.push({ texture: resolved.texture, wx: px, wy: py, bias: 0 });
           }
         }

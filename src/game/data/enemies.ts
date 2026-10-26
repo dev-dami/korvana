@@ -82,6 +82,66 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     drop: { id: "moonwell_shard", chance: 0.5 },
     spawn: { scar: 0.22 },
   },
+
+  // --- Tomb dwellers. They spawn in the `crypt` biome, which is every
+  // underground level; the Academy interior is kept clear by its landmark's
+  // safe radius, and each tomb's landing and relic chamber by theirs. ---
+  crypt_bat: {
+    id: "crypt_bat",
+    name: "Crypt Bat",
+    look: "bat",
+    health: 14,
+    damage: 4,
+    speed: 118,
+    aggroRange: 250,
+    attackRange: 34,
+    leash: 380,
+    gold: 1,
+    spawn: { crypt: 0.5 },
+  },
+  tomb_spider: {
+    id: "tomb_spider",
+    name: "Tomb Spider",
+    look: "spider",
+    health: 26,
+    damage: 7,
+    speed: 92,
+    aggroRange: 240,
+    attackRange: 36,
+    leash: 360,
+    gold: 3,
+    drop: { id: "lesser_tonic", chance: 0.18 },
+    spawn: { crypt: 0.34 },
+  },
+  bone_warden: {
+    id: "bone_warden",
+    name: "Bone Warden",
+    look: "skeleton",
+    health: 44,
+    damage: 10,
+    speed: 76,
+    aggroRange: 280,
+    attackRange: 40,
+    leash: 420,
+    gold: 6,
+    drop: { id: "mana_draught", chance: 0.2 },
+    spawn: { crypt: 0.2 },
+  },
+  barrow_guardian: {
+    id: "barrow_guardian",
+    name: "Barrow Guardian",
+    look: "guardian",
+    // Slow and heavy: a wall of armour you outpace rather than outfight.
+    health: 72,
+    damage: 14,
+    speed: 58,
+    aggroRange: 220,
+    attackRange: 42,
+    leash: 300,
+    gold: 12,
+    drop: { id: "lesser_tonic", chance: 0.4 },
+    spawn: { crypt: 0.1 },
+  },
 };
 
 export function enemyById(id: string): EnemyArchetype {
