@@ -694,6 +694,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const heavy = kind === "heavy";
+    this.player.strikePose("attack", heavy ? 300 : 200);
     this.audio.playAttack(heavy, outcome.hits > 0);
     calloutText(
       this,
@@ -890,6 +891,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    this.player.strikePose("cast", 260);
     this.audio.playSpell(SPELLS[spellId]?.kind);
     this.story.report({ kind: "spell_cast", id: spellId });
   }

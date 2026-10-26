@@ -2,6 +2,7 @@ import Phaser from "phaser";
 
 import { applyCameraZoom, TEXT_RES, viewHeight, viewWidth } from "../display";
 import { buildCharacters } from "../gfx/characters";
+import { buildPortraits } from "../gfx/portraits";
 import { bodyText, displayText, waitForDisplayFont } from "../gfx/fonts";
 import { buildTiles } from "../gfx/tiles";
 import { GameState } from "../state/GameState";
@@ -22,6 +23,7 @@ export class BootScene extends Phaser.Scene {
     applyCameraZoom(this);
     buildTiles(this);
     buildCharacters(this);
+    buildPortraits(this);
 
     const saved = SaveSystem.load();
     this.registry.set("state", new GameState(saved ?? undefined));

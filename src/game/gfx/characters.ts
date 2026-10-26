@@ -1,331 +1,40 @@
 import type Phaser from "phaser";
 
 import { canvasTex } from "./canvas";
+import { LOOKS } from "./looks";
+import type { Look } from "./looks";
+import { paintCreature } from "./paint/creatures";
+import { FH, FW, paintHumanoid } from "./paint/humanoid";
+import type { Facing, Pose } from "./paint/humanoid";
+import { Pix } from "./pixel";
 import type { Direction } from "../types";
 
-const ART_W = 16;
-const ART_H = 20;
-const SCALE = 2;
-export const FRAME_W = ART_W * SCALE;
-export const FRAME_H = ART_H * SCALE;
+export { LOOKS } from "./looks";
+export type { Look } from "./looks";
 
-const FRAMES = 3;
+/**
+ * Character sprite sheets, painted at boot from the costume sheets in looks.ts.
+ *
+ * Frames are 32x48 at native resolution (one art pixel per world pixel, like
+ * the tiles), feet on the bottom row but one. Each sheet is twelve columns by
+ * four rows:
+ *
+ *   columns 0-5   walk cycle (two full strides)
+ *   columns 6-9   idle: breathe in, breathe out, rest, blink
+ *   column  10    cast  (wand raised, tip lit)
+ *   column  11    attack (lunge)
+ *
+ *   rows: down, left, right, up
+ */
+export const FRAME_W = FW;
+export const FRAME_H = FH;
+
+const WALK_FRAMES = 6;
+const IDLE_FRAMES = 4;
+const COLS = WALK_FRAMES + IDLE_FRAMES + 2;
+const CAST_COL = WALK_FRAMES + IDLE_FRAMES;
+const ATTACK_COL = CAST_COL + 1;
 const DIRS: Direction[] = ["down", "left", "right", "up"];
-
-/**
- * Pixel art authored as strings. Each character maps to a palette entry:
- *   H hat   h hat underside   S skin   E eye   A hair
- *   T trim  R robe            r robe shade
- *   L left boot               K right boot
- */
-const ART_DOWN = [
-  "................",
-  "......HHHH......",
-  ".....HHHHHH.....",
-  "....HHHHHHHH....",
-  "...HHHHHHHHHH...",
-  "..HHHHHHHHHHHH..",
-  ".HHHHHHHHHHHHHH.",
-  "...hhhhhhhhhh...",
-  "....SSSSSSSS....",
-  "....SSSSSSSS....",
-  "....SESSSSES....",
-  "....SSSSSSSS....",
-  ".....SSSSSS.....",
-  "....TTTTTTTT....",
-  "...RRRRRRRRRR...",
-  "..RRRRrRRRRrRR..",
-  "..RRRRRRRRRRRR..",
-  "..RRRRRRRRRRRR..",
-  "...rrrrrrrrrr...",
-  "...LL......KK...",
-];
-
-const ART_UP = [
-  "................",
-  "......HHHH......",
-  ".....HHHHHH.....",
-  "....HHHHHHHH....",
-  "...HHHHHHHHHH...",
-  "..HHHHHHHHHHHH..",
-  ".HHHHHHHHHHHHHH.",
-  "...hhhhhhhhhh...",
-  "....AAAAAAAA....",
-  "....AAAAAAAA....",
-  "....AAAAAAAA....",
-  "....AAAAAAAA....",
-  ".....AAAAAA.....",
-  "....TTTTTTTT....",
-  "...RRRRRRRRRR...",
-  "..RRRRrRRRRrRR..",
-  "..RRRRRRRRRRRR..",
-  "..RRRRRRRRRRRR..",
-  "...rrrrrrrrrr...",
-  "...LL......KK...",
-];
-
-const ART_SIDE = [
-  "................",
-  ".....HHHH.......",
-  "....HHHHHH......",
-  "...HHHHHHHH.....",
-  "..HHHHHHHHHH....",
-  "..HHHHHHHHHHH...",
-  ".HHHHHHHHHHHHH..",
-  "...hhhhhhhhh....",
-  "...SSSSSS.......",
-  "...SSSSSS.......",
-  "...ESSSSS.......",
-  "...SSSSSS.......",
-  "....SSSS........",
-  "...TTTTTTT......",
-  "..RRRRRRRRR.....",
-  ".RRRRrRRRRrR....",
-  ".RRRRRRRRRRR....",
-  ".RRRRRRRRRRR....",
-  "..rrrrrrrrr.....",
-  "..LL....KK......",
-];
-
-/**
- * A hooded, legless figure with a tattered hem, for the things that carry the
- * Moonwell away. Symmetric, so one set covers both down and up.
- */
-const ART_WRAITH = [
-  "................",
-  "......hhhh......",
-  ".....hHHHHh.....",
-  "....hHHHHHHh....",
-  "...hHHHHHHHHh...",
-  "...HHHHHHHHHH...",
-  "...HEEHHHHEEH...",
-  "...HHHHHHHHHH...",
-  "...hHHHHHHHHh...",
-  "..hHHHHHHHHHHh..",
-  "..hHHHHHHHHHHh..",
-  "..HHHHHHHHHHHH..",
-  "..HHHrHHHHrHHH..",
-  "..HHHHHHHHHHHH..",
-  ".HHHHHHHHHHHHHH.",
-  ".HHHrHHHHHHrHHH.",
-  ".HH.HHHHHHHH.HH.",
-  "..H..HHHHHH..H..",
-  "....H.HH.H......",
-  "................",
-];
-
-const ART_WRAITH_SIDE = [
-  "................",
-  ".....hhhh.......",
-  "....hHHHHh......",
-  "...hHHHHHHh.....",
-  "..hHHHHHHHHh....",
-  "..HHHHHHHHHH....",
-  "..HEEHHHHHHH....",
-  "..HHHHHHHHHH....",
-  "..hHHHHHHHHh....",
-  ".hHHHHHHHHHHh...",
-  ".hHHHHHHHHHHh...",
-  ".HHHHHHHHHHHH...",
-  ".HHHrHHHHrHHH...",
-  ".HHHHHHHHHHHH...",
-  "HHHHHHHHHHHHHH..",
-  "HHHrHHHHHHrHHH..",
-  "HH.HHHHHHHHH.HH.",
-  ".H..HHHHHHH..H..",
-  "....H.HH.H......",
-  "................",
-];
-
-export interface CharacterLook {
-  key: string;
-  hat: string;
-  hatDark: string;
-  robe: string;
-  robeDark: string;
-  trim: string;
-  skin: string;
-  hair: string;
-  boot: string;
-  eye: string;
-  /** Which silhouette to draw. Defaults to the humanoid student shape. */
-  body?: "humanoid" | "wraith";
-}
-
-export const LOOKS: Record<string, CharacterLook> = {
-  hero: {
-    key: "hero",
-    hat: "#4a2f6b",
-    hatDark: "#33204a",
-    robe: "#9c2f3f",
-    robeDark: "#71212e",
-    trim: "#d9b44a",
-    skin: "#e8b98a",
-    hair: "#4a3423",
-    boot: "#3a2a1c",
-    eye: "#241f2b",
-  },
-  professor: {
-    key: "professor",
-    hat: "#1f3a63",
-    hatDark: "#152945",
-    robe: "#2f5a8c",
-    robeDark: "#214166",
-    trim: "#c9d4e2",
-    skin: "#dcae82",
-    hair: "#8d8d94",
-    boot: "#2b2b33",
-    eye: "#241f2b",
-  },
-  herbologist: {
-    key: "herbologist",
-    hat: "#22503a",
-    hatDark: "#173627",
-    robe: "#37785a",
-    robeDark: "#275940",
-    trim: "#cfe0a8",
-    skin: "#c98f62",
-    hair: "#3d2a17",
-    boot: "#33261a",
-    eye: "#241f2b",
-  },
-  student: {
-    key: "student",
-    hat: "#7a4a1c",
-    hatDark: "#553314",
-    robe: "#c07a2c",
-    robeDark: "#8e5920",
-    trim: "#f0dca0",
-    skin: "#e8b98a",
-    hair: "#6b4a26",
-    boot: "#3a2a1c",
-    eye: "#241f2b",
-  },
-  scholar: {
-    key: "scholar",
-    hat: "#5a2f5e",
-    hatDark: "#3e2041",
-    robe: "#8b52a8",
-    robeDark: "#623a78",
-    trim: "#e0cff0",
-    skin: "#d9a97f",
-    hair: "#241a12",
-    boot: "#2f2233",
-    eye: "#241f2b",
-  },
-  shade: {
-    key: "shade",
-    hat: "#22222e",
-    hatDark: "#131320",
-    robe: "#2f2f45",
-    robeDark: "#1c1c2c",
-    trim: "#5a5a80",
-    skin: "#3a3a52",
-    hair: "#18181f",
-    boot: "#101018",
-    eye: "#ff5a5a",
-  },
-  husk: {
-    key: "husk",
-    hat: "#3a2f2b",
-    hatDark: "#241d1a",
-    robe: "#4a3a33",
-    robeDark: "#2f2521",
-    trim: "#8a4a2a",
-    skin: "#5a4a42",
-    hair: "#1a1512",
-    boot: "#1a1512",
-    eye: "#ff7a3a",
-  },
-  wraith: {
-    key: "wraith",
-    hat: "#3b4a63",
-    hatDark: "#26313f",
-    robe: "#4d6076",
-    robeDark: "#354454",
-    trim: "#9fb6cc",
-    skin: "#7d93ab",
-    hair: "#2b3646",
-    boot: "#2b3646",
-    eye: "#bfe9ff",
-    body: "wraith",
-  },
-  adept: {
-    key: "adept",
-    hat: "#2a1f3d",
-    hatDark: "#1a1328",
-    robe: "#3d2c58",
-    robeDark: "#281c3a",
-    trim: "#8f6fd0",
-    skin: "#b39ac9",
-    hair: "#150f20",
-    boot: "#150f20",
-    eye: "#d0a6ff",
-  },
-  vale: {
-    key: "vale",
-    hat: "#1c2a24",
-    hatDark: "#111a16",
-    robe: "#24382f",
-    robeDark: "#16241d",
-    trim: "#6fd0a0",
-    skin: "#a8c4b4",
-    hair: "#0e1512",
-    boot: "#0e1512",
-    eye: "#8fffd0",
-  },
-};
-
-function paletteFor(look: CharacterLook): Record<string, string> {
-  return {
-    H: look.hat,
-    h: look.hatDark,
-    S: look.skin,
-    E: look.eye,
-    A: look.hair,
-    T: look.trim,
-    R: look.robe,
-    r: look.robeDark,
-    L: look.boot,
-    K: look.boot,
-  };
-}
-
-function drawArt(
-  ctx: CanvasRenderingContext2D,
-  art: string[],
-  pal: Record<string, string>,
-  ox: number,
-  oy: number,
-  bootDx: { L: number; K: number },
-  bob: number,
-  mirror: boolean,
-): void {
-  for (let y = 0; y < art.length; y++) {
-    const row = art[y];
-    if (!row) continue;
-    for (let x = 0; x < row.length; x++) {
-      const ch = row[x];
-      if (!ch || ch === ".") continue;
-      const color = pal[ch];
-      if (!color) continue;
-
-      let px = mirror ? ART_W - 1 - x : x;
-      if (ch === "L") px += bootDx.L;
-      if (ch === "K") px += bootDx.K;
-
-      ctx.fillStyle = color;
-      ctx.fillRect(ox + px * SCALE, oy + (y + bob) * SCALE, SCALE, SCALE);
-    }
-  }
-}
-
-/** Walk cycle: a 1px bob plus opposite feet swinging out. */
-const WALK: Array<{ bob: number; L: number; K: number }> = [
-  { bob: 0, L: 0, K: 0 },
-  { bob: -1, L: -1, K: 1 },
-  { bob: 0, L: 1, K: -1 },
-];
 
 export function sheetKey(lookKey: string): string {
   return `char_${lookKey}`;
@@ -339,73 +48,172 @@ export function idleKey(lookKey: string, dir: Direction): string {
   return `${lookKey}-idle-${dir}`;
 }
 
-/** Which silhouette belongs to a look, facing a direction. */
-function artFor(look: CharacterLook, dir: Direction): string[] {
-  if (look.body === "wraith") {
-    return dir === "left" || dir === "right" ? ART_WRAITH_SIDE : ART_WRAITH;
-  }
-  return dir === "down" ? ART_DOWN : dir === "up" ? ART_UP : ART_SIDE;
+/** A held one-frame pose: wand raised and lit. */
+export function castKey(lookKey: string, dir: Direction): string {
+  return `${lookKey}-cast-${dir}`;
 }
 
-function buildSheet(scene: Phaser.Scene, look: CharacterLook): void {
+/** A held one-frame pose: lunging into a swing. */
+export function attackKey(lookKey: string, dir: Direction): string {
+  return `${lookKey}-attack-${dir}`;
+}
+
+/** Frame index of a direction's first idle frame - a good still for portraits and duels. */
+export function standingFrame(dir: Direction): number {
+  return DIRS.indexOf(dir) * COLS + WALK_FRAMES;
+}
+
+export function hasLook(key: string): boolean {
+  return Boolean(LOOKS[key]);
+}
+
+// --- poses -------------------------------------------------------------------
+
+function facingOf(dir: Direction): Facing {
+  return dir === "right" ? "left" : dir;
+}
+
+/** The pose for one column of the sheet. */
+function poseFor(look: Look, dir: Direction, col: number): Pose {
+  const facing = facingOf(dir);
+  const floats = look.floats === true;
+  const base: Pose = {
+    facing,
+    stride: 0,
+    bob: 0,
+    breath: 0,
+    blink: false,
+    action: "none",
+    t: 0,
+    hover: floats ? -3 : 0,
+  };
+
+  if (col < WALK_FRAMES) {
+    const phase = ((col + 0.5) / WALK_FRAMES) * Math.PI * 2;
+    const stride = Math.sin(phase);
+    return {
+      ...base,
+      stride: floats ? stride * 0.4 : stride,
+      bob: floats ? 0 : Math.abs(stride) < 0.75 ? -1 : 0,
+      t: col / WALK_FRAMES,
+      hover: floats ? -3 + Math.round(Math.sin((col / WALK_FRAMES) * Math.PI * 2) * 1.5) : 0,
+    };
+  }
+
+  if (col < CAST_COL) {
+    const i = col - WALK_FRAMES;
+    return {
+      ...base,
+      breath: i === 1 || i === 2 ? (floats ? 0 : 1) : 0,
+      blink: i === 3,
+      t: i / IDLE_FRAMES,
+      hover: floats ? -3 + [0, -1, -1, 0][i]! : 0,
+    };
+  }
+
+  return {
+    ...base,
+    action: col === CAST_COL ? "cast" : "attack",
+    bob: col === ATTACK_COL && !floats ? 1 : 0,
+    stride: col === ATTACK_COL ? 0.5 : 0,
+    t: 0.25,
+  };
+}
+
+function paintFrame(look: Look, dir: Direction, col: number): Pix {
+  const pose = poseFor(look, dir, col);
+  if (look.body === "humanoid") return paintHumanoid(look, pose);
+  return paintCreature(look, pose, col < WALK_FRAMES || col >= CAST_COL);
+}
+
+// --- sheets ----------------------------------------------------------------------
+
+function buildSheet(scene: Phaser.Scene, look: Look): void {
   const key = sheetKey(look.key);
-  const sheetW = FRAME_W * FRAMES;
+  const sheetW = FRAME_W * COLS;
   const sheetH = FRAME_H * DIRS.length;
   const { tex, ctx } = canvasTex(scene, key, sheetW, sheetH);
-  const pal = paletteFor(look);
+  const sheet = new Pix(sheetW, sheetH);
 
   for (let d = 0; d < DIRS.length; d++) {
-    const dir = DIRS[d];
-    if (!dir) continue;
-    const art = artFor(look, dir);
-    const mirror = dir === "right";
-
-    for (let f = 0; f < FRAMES; f++) {
-      const step = WALK[f] ?? WALK[0]!;
-      drawArt(
-        ctx,
-        art,
-        pal,
-        f * FRAME_W,
-        d * FRAME_H,
-        { L: step.L, K: step.K },
-        step.bob,
-        mirror,
-      );
+    const dir = DIRS[d]!;
+    for (let col = 0; col < COLS; col++) {
+      const frame = paintFrame(look, dir, col);
+      sheet.stamp(frame, col * FRAME_W, d * FRAME_H, dir === "right");
     }
   }
 
-  for (let i = 0; i < FRAMES * DIRS.length; i++) {
-    const col = i % FRAMES;
-    const row = Math.floor(i / FRAMES);
+  writePix(ctx, sheet);
+
+  for (let i = 0; i < COLS * DIRS.length; i++) {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
     tex.add(i, 0, col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H);
   }
   tex.refresh();
 }
 
-function registerAnims(scene: Phaser.Scene, look: CharacterLook): void {
+/** Copies a pixel buffer straight into a fresh canvas. */
+export function writePix(ctx: CanvasRenderingContext2D, pix: Pix): void {
+  const img = ctx.createImageData(pix.w, pix.h);
+  const d = img.data;
+  for (let i = 0; i < pix.w * pix.h; i++) {
+    const a = pix.alpha[i]!;
+    if (!a) continue;
+    const c = pix.rgb[i]!;
+    d[i * 4] = (c >> 16) & 0xff;
+    d[i * 4 + 1] = (c >> 8) & 0xff;
+    d[i * 4 + 2] = c & 0xff;
+    d[i * 4 + 3] = a;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function registerAnims(scene: Phaser.Scene, look: Look): void {
   const key = sheetKey(look.key);
+  // Bats never stop flapping; the lamp's flame never stops dancing.
+  const restless = look.body === "bat";
+  const walkRate = look.body === "spider" ? 16 : look.body === "bat" ? 14 : look.floats ? 8 : 10;
+
   for (let d = 0; d < DIRS.length; d++) {
-    const dir = DIRS[d];
-    if (!dir) continue;
-    const start = d * FRAMES;
+    const dir = DIRS[d]!;
+    const start = d * COLS;
+
     const walk = animKey(look.key, dir);
-    if (!scene.anims.exists(walk)) {
+    if (scene.anims.exists(walk)) scene.anims.remove(walk);
+    scene.anims.create({
+      key: walk,
+      frames: scene.anims.generateFrameNumbers(key, { start, end: start + WALK_FRAMES - 1 }),
+      frameRate: walkRate,
+      repeat: -1,
+    });
+
+    const idle = idleKey(look.key, dir);
+    if (scene.anims.exists(idle)) scene.anims.remove(idle);
+    if (restless) {
       scene.anims.create({
-        key: walk,
-        frames: scene.anims.generateFrameNumbers(key, { start, end: start + FRAMES - 1 }),
-        frameRate: 8,
+        key: idle,
+        frames: scene.anims.generateFrameNumbers(key, { start, end: start + WALK_FRAMES - 1 }),
+        frameRate: walkRate,
+        repeat: -1,
+      });
+    } else {
+      const i0 = start + WALK_FRAMES;
+      // Breathing is slow; the blink is quick. A lamp flickers evenly.
+      const durations = look.body === "lamp" ? [160, 160, 160, 160] : [900, 650, 750, 130];
+      scene.anims.create({
+        key: idle,
+        frames: durations.map((duration, k) => ({ key, frame: i0 + k, duration })),
         repeat: -1,
       });
     }
-    const idle = idleKey(look.key, dir);
-    if (!scene.anims.exists(idle)) {
-      scene.anims.create({
-        key: idle,
-        frames: [{ key, frame: start }],
-        frameRate: 1,
-        repeat: -1,
-      });
+
+    for (const [poseKey, col] of [
+      [castKey(look.key, dir), CAST_COL],
+      [attackKey(look.key, dir), ATTACK_COL],
+    ] as const) {
+      if (scene.anims.exists(poseKey)) scene.anims.remove(poseKey);
+      scene.anims.create({ key: poseKey, frames: [{ key, frame: start + col }], frameRate: 1, repeat: -1 });
     }
   }
 }
