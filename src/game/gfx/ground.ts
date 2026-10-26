@@ -410,7 +410,13 @@ function paintWaterTile(p: Painter, rng: () => number, ramp: RGB[]): void {
 
 // --- transitions -------------------------------------------------------------
 
-export type EdgeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+/**
+ * Sides, outer corners, and inner corners. An inner corner ("ine") is used
+ * when the same terrain lies on two adjacent sides: one diagonal fringe
+ * instead of two overlapping side strips, which turns a tile staircase into
+ * a smooth diagonal coast.
+ */
+export type EdgeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw" | "ine" | "inw" | "ise" | "isw";
 export const EDGE_VARIANTS = 3;
 
 /** Grid offset of the neighbour that each direction refers to. */
@@ -423,6 +429,11 @@ export const EDGE_OFFSETS: Record<EdgeDir, [number, number]> = {
   nw: [-1, -1],
   se: [1, 1],
   sw: [-1, 1],
+  // Inner corners have no single neighbour; they stand for the two sides.
+  ine: [1, -1],
+  inw: [-1, -1],
+  ise: [1, 1],
+  isw: [-1, 1],
 };
 
 /** Base depth, in pixels, that a neighbour's fringe reaches into a tile. */
@@ -452,6 +463,21 @@ function edgeDistance(dir: EdgeDir, x: number, y: number, variant: number): numb
       return cx - edgeWobble(cy / S, variant + 23);
     case "e":
       return S - cx - edgeWobble(cy / S, variant + 37);
+    case "ine":
+    case "inw":
+    case "ise":
+    case "isw": {
+      // Mirror into the "ine" frame: land to the north and east, fringe line
+      // from (0, D) to (S - D, S) so it meets the side pieces next door.
+      const mx = dir === "inw" || dir === "isw" ? S - cx : cx;
+      const my = dir === "ise" || dir === "isw" ? S - cy : cy;
+      const vx = mx;
+      const vy = my - EDGE_DEPTH;
+      const len = S - EDGE_DEPTH;
+      const t = Math.max(0, Math.min(1, (vx + vy) / (2 * len)));
+      const perp = (vy - vx) / Math.SQRT2;
+      return perp - (edgeWobble(t, variant + 71) - EDGE_DEPTH);
+    }
     default: {
       const ox = dir.includes("e") ? S : 0;
       const oy = dir.includes("s") ? S : 0;

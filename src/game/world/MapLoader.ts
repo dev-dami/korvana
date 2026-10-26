@@ -19,7 +19,16 @@ import { fbm, hash2 } from "./noise";
 import { RING } from "./TerrainGenerator";
 import type { Chunk } from "./TerrainGenerator";
 
-const SIDES: EdgeDir[] = ["n", "s", "e", "w"];
+const SIDES = ["n", "s", "e", "w"] as const;
+type Side = (typeof SIDES)[number];
+const SIDE_BIT: Record<Side, number> = { n: 1, s: 2, e: 4, w: 8 };
+/** Adjacent side pairs and the inner-corner piece that covers both. */
+const INNER: ReadonlyArray<readonly [Side, Side, EdgeDir]> = [
+  ["n", "e", "ine"],
+  ["n", "w", "inw"],
+  ["s", "e", "ise"],
+  ["s", "w", "isw"],
+];
 const CORNERS: EdgeDir[] = ["ne", "nw", "se", "sw"];
 /**
  * Pixels per tile in the water depth texture. Canvas textures are sampled
@@ -43,8 +52,19 @@ const SHELF: ReadonlyArray<readonly [number, number]> = [
   [1, 1],
 ];
 
-/** Scenes that already have the water-layer listeners installed. */
-const wired = new WeakSet<Phaser.Scene>();
+/** Off-screen chunk painting allowed per frame. */
+const PAINT_BUDGET_MS = 4;
+/** How far beyond the camera a chunk still counts as possibly visible. */
+const VISIBLE_MARGIN = 96;
+
+interface Job {
+  chunk: Chunk;
+  tex: Phaser.Textures.CanvasTexture;
+  water: Phaser.Textures.CanvasTexture | null;
+}
+
+/** Per scene: chunks created but not yet painted. Also marks the scene as wired. */
+const queues = new WeakMap<Phaser.Scene, Map<string, Job>>();
 
 interface Piece {
   kind: GroundTile;
@@ -74,11 +94,65 @@ export class MapLoader {
     return scene.textures.get(key).getSourceImage() as CanvasImageSource;
   }
 
+  /**
+   * Creates the chunk's textures and paints them - now if the chunk could be
+   * on screen, otherwise over the next few frames within a time budget.
+   * Chunks stream in two chunks beyond the view, so crossing a chunk border
+   * no longer paints a whole row of them in one frame.
+   */
   static bake(scene: Phaser.Scene, chunk: Chunk): string {
-    MapLoader.wire(scene);
+    const queue = MapLoader.wire(scene);
     const key = MapLoader.textureKey(chunk.cx, chunk.cy);
-    const { tex, ctx } = canvasTex(scene, key, CHUNK_PX, CHUNK_PX);
+    const { tex } = canvasTex(scene, key, CHUNK_PX, CHUNK_PX);
 
+    const waterKey = MapLoader.waterKey(chunk.cx, chunk.cy);
+    let water: Phaser.Textures.CanvasTexture | null = null;
+    if (chunk.waterElevation) {
+      water = canvasTex(scene, waterKey, CHUNK_TILES * WATER_RES, CHUNK_TILES * WATER_RES).tex;
+    } else if (scene.textures.exists(waterKey)) {
+      scene.textures.remove(waterKey);
+    }
+
+    const job: Job = { chunk, tex, water };
+    if (MapLoader.mightBeVisible(scene, chunk)) MapLoader.paint(scene, job);
+    else queue.set(key, job);
+    return key;
+  }
+
+  /** Paints queued chunks: anything that might be on screen, then more within budget. */
+  private static pump(scene: Phaser.Scene, queue: Map<string, Job>): void {
+    if (queue.size === 0) return;
+    const start = performance.now();
+    for (const [key, job] of queue) {
+      if (scene.textures.get(key) !== job.tex) {
+        queue.delete(key);
+        continue;
+      }
+      if (!MapLoader.mightBeVisible(scene, job.chunk) && performance.now() - start > PAINT_BUDGET_MS) continue;
+      queue.delete(key);
+      MapLoader.paint(scene, job);
+    }
+  }
+
+  /**
+   * True when a chunk is within reach of the camera or the player. The player
+   * test matters after a teleport, when the camera is still on its way.
+   */
+  private static mightBeVisible(scene: Phaser.Scene, chunk: Chunk): boolean {
+    const camera = scene.cameras.main;
+    const halfW = camera.width / camera.zoom / 2 + VISIBLE_MARGIN;
+    const halfH = camera.height / camera.zoom / 2 + VISIBLE_MARGIN;
+    const left = chunk.cx * CHUNK_PX;
+    const top = chunk.cy * CHUNK_PX;
+    const near = (x: number, y: number) =>
+      left < x + halfW && left + CHUNK_PX > x - halfW && top < y + halfH && top + CHUNK_PX > y - halfH;
+    const player = (scene as Phaser.Scene & { player?: { x: number; y: number } }).player;
+    return near(camera.midPoint.x, camera.midPoint.y) || (!!player && near(player.x, player.y));
+  }
+
+  private static paint(scene: Phaser.Scene, job: Job): void {
+    const { chunk, tex } = job;
+    const ctx = tex.getContext();
     const kinds = MapLoader.visualKinds(chunk);
     const kindAt = (lx: number, ly: number): GroundTile => kinds[(ly + 1) * RING + (lx + 1)] as GroundTile;
 
@@ -101,7 +175,18 @@ export class MapLoader {
         if (prio < 0) continue;
         pieces.length = 0;
 
+        // Sides first; where the same terrain wraps two adjacent sides, one
+        // diagonal inner-corner piece replaces both.
+        let used = 0;
+        for (const [a, b, inner] of INNER) {
+          const ka = kindAt(lx + EDGE_OFFSETS[a][0], ly + EDGE_OFFSETS[a][1]);
+          if (!MapLoader.overhangs(ka, prio)) continue;
+          if (kindAt(lx + EDGE_OFFSETS[b][0], ly + EDGE_OFFSETS[b][1]) !== ka) continue;
+          pieces.push({ kind: ka, dir: inner });
+          used |= SIDE_BIT[a] | SIDE_BIT[b];
+        }
         for (const dir of SIDES) {
+          if (used & SIDE_BIT[dir]) continue;
           const [ox, oy] = EDGE_OFFSETS[dir];
           const other = kindAt(lx + ox, ly + oy);
           if (MapLoader.overhangs(other, prio)) pieces.push({ kind: other, dir });
@@ -156,11 +241,7 @@ export class MapLoader {
 
     tex.refresh();
 
-    if (chunk.waterElevation) MapLoader.bakeWater(scene, chunk, chunk.waterElevation, kinds);
-    else if (scene.textures.exists(MapLoader.waterKey(chunk.cx, chunk.cy))) {
-      scene.textures.remove(MapLoader.waterKey(chunk.cx, chunk.cy));
-    }
-    return key;
+    if (job.water && chunk.waterElevation) MapLoader.paintWater(job.water, chunk, chunk.waterElevation, kinds);
   }
 
   /**
@@ -207,12 +288,17 @@ export class MapLoader {
     return Math.floor(hash2(wx, wy, dir.charCodeAt(0) * 31 + (dir.charCodeAt(1) || 7)) * EDGE_VARIANTS);
   }
 
+  /**
+   * Low-frequency light and hue drift, composited onto the land only
+   * (source-atop) so water stays clear. Brightness and the vegetation's warm
+   * or lush cast are folded into one RGBA value per tile corner, then
+   * stretched over the chunk with smoothing - one draw per chunk.
+   */
   private static drawTone(ctx: CanvasRenderingContext2D, chunk: Chunk, kinds: GroundTile[]): void {
     const corners = MapLoader.cornerCanvas();
     const cctx = corners.getContext("2d");
     if (!cctx) return;
     const img = cctx.createImageData(CORNER_SIDE, CORNER_SIDE);
-    const hue = cctx.createImageData(CORNER_SIDE, CORNER_SIDE);
     const baseX = chunk.cx * CHUNK_TILES;
     const baseY = chunk.cy * CHUNK_TILES;
 
@@ -223,35 +309,41 @@ export class MapLoader {
         const i = (y * CORNER_SIDE + x) * 4;
         const light = fbm(wx * 0.07, wy * 0.07, 9137, 3) - 0.5;
         const k = Math.min(1, Math.abs(light) * 2.2);
-        const shade = light > 0 ? 255 : 0;
-        img.data[i] = shade;
-        img.data[i + 1] = shade;
-        img.data[i + 2] = shade;
-        img.data[i + 3] = Math.round(k * (light > 0 ? 34 : 52));
+        // Light layer: white to brighten, black to darken.
+        let r = light > 0 ? 255 : 0;
+        let g = r;
+        let b = r;
+        let a = (k * (light > 0 ? 34 : 52)) / 255;
 
         // Vegetation drifts between sun-dried gold and deep, lush green.
         const kind = kinds[Math.min(RING - 1, y + 1) * RING + Math.min(RING - 1, x + 1)] as GroundTile;
         if (GROUND_DEFS[kind]?.family === "grass") {
           const drift = fbm(wx * 0.045, wy * 0.045, 5311, 2) - 0.5;
-          const strength = Math.min(1, Math.abs(drift) * 2.6);
           const warm = drift > 0;
-          hue.data[i] = warm ? 196 : 20;
-          hue.data[i + 1] = warm ? 178 : 70;
-          hue.data[i + 2] = warm ? 70 : 52;
-          hue.data[i + 3] = Math.round(strength * (warm ? 46 : 40));
+          const ha = (Math.min(1, Math.abs(drift) * 2.6) * (warm ? 46 : 40)) / 255;
+          // Composite the hue under the light layer ("light over hue").
+          const outA = a + ha * (1 - a);
+          if (outA > 0) {
+            r = (r * a + (warm ? 196 : 20) * ha * (1 - a)) / outA;
+            g = (g * a + (warm ? 178 : 70) * ha * (1 - a)) / outA;
+            b = (b * a + (warm ? 70 : 52) * ha * (1 - a)) / outA;
+          }
+          a = outA;
         }
+        img.data[i] = r;
+        img.data[i + 1] = g;
+        img.data[i + 2] = b;
+        img.data[i + 3] = Math.round(a * 255);
       }
     }
 
+    cctx.putImageData(img, 0, 0);
     ctx.save();
     ctx.globalCompositeOperation = "source-atop";
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
-    for (const layer of [hue, img]) {
-      cctx.putImageData(layer, 0, 0);
-      // Sample between corner centres so neighbouring chunks agree at the seam.
-      ctx.drawImage(corners, 0.5, 0.5, CHUNK_TILES, CHUNK_TILES, 0, 0, CHUNK_PX, CHUNK_PX);
-    }
+    // Sample between corner centres so neighbouring chunks agree at the seam.
+    ctx.drawImage(corners, 0.5, 0.5, CHUNK_TILES, CHUNK_TILES, 0, 0, CHUNK_PX, CHUNK_PX);
     ctx.restore();
   }
 
@@ -288,7 +380,12 @@ export class MapLoader {
   }
 
   /** The depth gradient under a chunk's water: pale over sandbars, inky offshore. */
-  private static bakeWater(scene: Phaser.Scene, chunk: Chunk, elevation: Float32Array, kinds: GroundTile[]): void {
+  private static paintWater(
+    tex: Phaser.Textures.CanvasTexture,
+    chunk: Chunk,
+    elevation: Float32Array,
+    kinds: GroundTile[],
+  ): void {
     const corners = MapLoader.cornerCanvas();
     const cctx = corners.getContext("2d");
     if (!cctx) return;
@@ -317,7 +414,7 @@ export class MapLoader {
     cctx.putImageData(img, 0, 0);
 
     const size = CHUNK_TILES * WATER_RES;
-    const { tex, ctx } = canvasTex(scene, MapLoader.waterKey(chunk.cx, chunk.cy), size, size);
+    const ctx = tex.getContext();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(corners, 0.5, 0.5, CHUNK_TILES, CHUNK_TILES, 0, 0, size, size);
@@ -329,10 +426,14 @@ export class MapLoader {
    * image's lifetime; we follow it through the scene's add/remove events
    * rather than asking WorldManager to know about water at all.
    */
-  private static wire(scene: Phaser.Scene): void {
-    if (wired.has(scene)) return;
-    wired.add(scene);
+  private static wire(scene: Phaser.Scene): Map<string, Job> {
+    const existing = queues.get(scene);
+    if (existing) return existing;
+    const queue = new Map<string, Job>();
+    queues.set(scene, queue);
     const waters = new Map<Phaser.GameObjects.GameObject, Phaser.GameObjects.Image>();
+
+    scene.sys.events.on(Phaser.Scenes.Events.POST_UPDATE, () => MapLoader.pump(scene, queue));
 
     scene.sys.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, (obj: Phaser.GameObjects.GameObject) => {
       if (!(obj instanceof Phaser.GameObjects.Image)) return;
@@ -357,5 +458,6 @@ export class MapLoader {
       water.destroy();
       if (scene.textures.exists(key)) scene.textures.remove(key);
     });
+    return queue;
   }
 }
