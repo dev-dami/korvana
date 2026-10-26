@@ -15,6 +15,7 @@ import type {
   EscapeSpec,
   FloodSpec,
   GateSpec,
+  GlowSpec,
   LeverSpec,
   LootSpec,
   MechSpec,
@@ -1435,6 +1436,31 @@ export class Flood extends Mech {
   }
 }
 
+export class Glow extends Mech {
+  private readonly lights: LightSource[] = [];
+
+  constructor(ctx: MechContext, lvl: LevelRuntime, spec: GlowSpec, tiles: WorldTile[]) {
+    super(ctx, lvl, spec, tiles);
+    for (const tile of tiles) {
+      this.lights.push(
+        ctx.addLight({
+          x: tileCx(tile),
+          y: tile.ty * TILE + TILE / 2,
+          radius: spec.radius ?? 300,
+          color: spec.color ?? 0xffb070,
+          intensity: spec.intensity ?? 0.55,
+          flicker: spec.flicker ?? 0.08,
+        }),
+      );
+    }
+  }
+
+  destroy(): void {
+    for (const light of this.lights) this.ctx.removeLight(light);
+    super.destroy();
+  }
+}
+
 export class Checkpoint extends Mech {
   update(): void {
     for (const tile of this.tiles) {
@@ -1537,13 +1563,24 @@ export class Escape extends Mech {
     }
 
     this.grace = Math.max(0, this.grace - dt);
-    const onStart = this.tiles.some((t) => this.playerOn(t));
+
+    // Reaching the far end always counts, however you got there: a save made
+    // mid-chase must never leave the escape unfinishable.
+    if (this.goals.some((g) => this.playerOn(g))) {
+      this.finish();
+      return;
+    }
+
+    // The start line, or anywhere further down the corridor (stepping over the
+    // line during the grace beat, or loading a save made mid-run).
+    const onStart = this.tiles.some((t) => this.playerOn(t)) || this.nearPath();
 
     if (this.state === "idle" && onStart && this.grace <= 0) {
       this.state = "waiting";
       this.timer = this.escape.delay ?? 1.2;
-      const t = this.tiles[0]!;
-      this.lvl.respawn = { x: tileCx(t), y: tileBottom(t) - 2 };
+      const [rx, ry] = this.escape.respawn ?? [this.tiles[0]!.lx, this.tiles[0]!.ly];
+      const back = { tx: this.lvl.ox + rx, ty: this.lvl.oy + ry };
+      this.lvl.respawn = { x: tileCx(back), y: tileBottom(back) - 2 };
       this.ctx.toast("Behind you, something enormous comes loose.");
       this.ctx.sfx("collapse");
       this.ctx.emit("trap_triggered", "boulder");
@@ -1556,6 +1593,24 @@ export class Escape extends Mech {
     }
 
     if (this.state === "rolling") this.roll(dt);
+  }
+
+  /** Is the player in the corridor, past the start line? */
+  private nearPath(): boolean {
+    const p = this.ctx.playerPos();
+    const path = this.escape.path;
+    for (let i = 1; i + 1 < path.length + 1 && i < path.length; i++) {
+      const a = this.point(i - 1);
+      const b = this.point(i);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - 12 - a.y) * dy) / len2));
+      // Skip the first tile and a half, which is the start line itself.
+      if (i === 1 && t * Math.sqrt(len2) < 48) continue;
+      if (Math.hypot(p.x - (a.x + dx * t), p.y - 12 - (a.y + dy * t)) < 40) return true;
+    }
+    return false;
   }
 
   private release(): void {
@@ -1597,10 +1652,6 @@ export class Escape extends Mech {
     this.shadow?.setPosition(this.bx, this.by + 30);
 
     const p = this.ctx.playerPos();
-    if (this.goals.some((g) => this.playerOn(g))) {
-      this.finish();
-      return;
-    }
     if (Math.hypot(this.bx - p.x, this.by - (p.y - 12)) < 40) {
       this.crush();
       return;
@@ -1641,6 +1692,7 @@ export class Escape extends Mech {
   }
 
   private finish(): void {
+    if (this.state === "done") return;
     this.state = "done";
     this.active = true;
     const spec = this.escape;

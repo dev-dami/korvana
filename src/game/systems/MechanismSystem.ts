@@ -23,6 +23,7 @@ import {
   Escape,
   Flood,
   Gate,
+  Glow,
   Lever,
   Loot,
   Mech,
@@ -66,6 +67,7 @@ const FIRE_SPELLS = new Set(["fire_bolt", "ember_nova"]);
 
 /** Update order: inputs, then the logic that reads them, then what the logic drives. */
 const KIND_ORDER: Record<MechSpec["kind"], number> = {
+  glow: 0,
   plate: 0,
   lever: 0,
   brazier: 0,
@@ -142,6 +144,8 @@ export class MechanismSystem implements MechContext {
   private lockedNotified: Portal | null = null;
   private pending: PendingHit[] = [];
   private audioCtx: AudioContext | null = null;
+  /** The Warden's Lantern's own light, carried with the player underground. */
+  private lanternLight: LightSource | null = null;
 
   constructor(scene: WorldScene, host: MechanismHost) {
     this.scene = scene;
@@ -223,6 +227,8 @@ export class MechanismSystem implements MechContext {
 
   private create(lvl: LevelRuntime, spec: MechSpec, tiles: WorldTile[]): Mech | null {
     switch (spec.kind) {
+      case "glow":
+        return new Glow(this, lvl, spec, tiles);
       case "plate":
         return new Plate(this, lvl, spec, tiles);
       case "lever":
@@ -310,7 +316,21 @@ export class MechanismSystem implements MechContext {
 
     this.lastX = player.x;
     this.lastY = player.y;
+    this.updateLantern();
     this.updatePrompt(inputEnabled);
+  }
+
+  private updateLantern(): void {
+    const carried = !!this.current && this.current.level.def.tileset !== "grounds" && this.hasItem("wardens_lantern");
+    if (!carried) {
+      this.removeLight(this.lanternLight);
+      this.lanternLight = null;
+      return;
+    }
+    const p = this.scene.player;
+    this.lanternLight ??= this.addLight({ x: p.x, y: p.y, radius: 300, color: 0xdce8ff, intensity: 0.6, flicker: 0.06 });
+    this.lanternLight.x = p.x;
+    this.lanternLight.y = p.y - 20;
   }
 
   private runtimeAt(x: number, y: number): LevelRuntime | null {
@@ -381,7 +401,10 @@ export class MechanismSystem implements MechContext {
     if (this.occupied(tx, ty)) return false;
     for (const mech of this.byTile.get(`${tx},${ty}`) ?? []) {
       const kind = mech.spec.kind;
-      if (kind !== "plate" && kind !== "spikes" && kind !== "checkpoint") return false;
+      // A block's own starting square is free once it has moved off it; where
+      // blocks stand now is already solid through the overrides.
+      if (kind === "block" || kind === "plate" || kind === "spikes" || kind === "checkpoint" || kind === "glow") continue;
+      return false;
     }
     return true;
   }
@@ -430,6 +453,7 @@ export class MechanismSystem implements MechContext {
     const at = lvl.respawn ?? { x: this.scene.player.x, y: this.scene.player.y };
     this.scene.player.setPosition(at.x, at.y);
     this.scene.world.update(at.x, at.y);
+    this.scene.cameras.main.centerOn(at.x, at.y);
     this.lastX = at.x;
     this.lastY = at.y;
     this.scene.cameras.main.flash(260, 30, 20, 30);
@@ -612,6 +636,8 @@ export class MechanismSystem implements MechContext {
         player.holdStill();
       }
       this.scene.world.update(target.x, target.y);
+      // Cut, do not pan: the camera's follow lerp would sweep across the map.
+      camera.centerOn(target.x, target.y);
       this.lastX = target.x;
       this.lastY = target.y;
       const arrived = this.runtimeAt(target.x, target.y);
@@ -784,6 +810,8 @@ export class MechanismSystem implements MechContext {
   }
 
   destroy(): void {
+    this.removeLight(this.lanternLight);
+    this.lanternLight = null;
     for (const lvl of this.runtimes) for (const mech of lvl.mechs.values()) mech.destroy();
     this.runtimes.length = 0;
     this.byTile.clear();

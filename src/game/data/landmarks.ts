@@ -249,6 +249,15 @@ export const LANDMARKS: LandmarkDef[] = [
     lore: "thornroot_barrow",
   },
   {
+    // Zone: the root hall. Nothing spawns among the stones, so a block puzzle
+    // is never decided by a spider standing on the square you need.
+    id: "barrow_root_hall",
+    name: "The Root Hall",
+    tx: 652,
+    ty: 3020,
+    safeRadius: 360,
+  },
+  {
     // Zone: the Barrow's relic chamber.
     id: "barrow_heart",
     name: "The Barrow Heart",

@@ -241,9 +241,25 @@ export interface EscapeSpec extends MechBase {
   speed?: number;
   /** Head start, in seconds. */
   delay?: number;
+  /**
+   * Where a flattened player wakes, in level tiles - just behind the start
+   * line, so the next run begins when they choose to step over it.
+   */
+  respawn?: [number, number];
+}
+
+/** An unseen light source - lamplight from above, a glow off water - so rooms read in the dark. */
+export interface GlowSpec extends MechBase {
+  kind: "glow";
+  radius?: number;
+  /** 0xRRGGBB. */
+  color?: number;
+  intensity?: number;
+  flicker?: number;
 }
 
 export type MechSpec =
+  | GlowSpec
   | PlateSpec
   | LeverSpec
   | GateSpec
