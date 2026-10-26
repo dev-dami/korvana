@@ -21,8 +21,13 @@ import type { Chunk } from "./TerrainGenerator";
 
 const SIDES: EdgeDir[] = ["n", "s", "e", "w"];
 const CORNERS: EdgeDir[] = ["ne", "nw", "se", "sw"];
-/** Pixels per tile in the water depth texture; it is smooth, so it can be tiny. */
-const WATER_RES = 4;
+/**
+ * Pixels per tile in the water depth texture. Canvas textures are sampled
+ * NEAREST in a pixel-art game (and Phaser re-uploads stale pixels if the
+ * filter is changed afterwards), so the gradient is baked at half resolution
+ * rather than relying on linear filtering of a tiny texture.
+ */
+const WATER_RES = 16;
 const CORNER_SIDE = CHUNK_TILES + 1;
 const NEIGHBOURS: ReadonlyArray<readonly [number, number]> = [
   [-1, 0],
@@ -317,10 +322,6 @@ export class MapLoader {
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(corners, 0.5, 0.5, CHUNK_TILES, CHUNK_TILES, 0, 0, size, size);
     tex.refresh();
-    tex.setFilter(Phaser.Textures.FilterMode.LINEAR);
-    // Power-of-two textures default to repeating, which bleeds the far edge
-    // into this one under linear filtering and draws a seam on every chunk.
-    tex.source[0]?.setWrap(Phaser.Textures.WrapMode.CLAMP_TO_EDGE, Phaser.Textures.WrapMode.CLAMP_TO_EDGE);
   }
 
   /**

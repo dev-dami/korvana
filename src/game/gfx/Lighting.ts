@@ -4,6 +4,7 @@ import { DEPTH } from "../config";
 import { LIGHT_EMITTERS } from "./lights";
 import type { LightRegistry, LightSource, LightSpec } from "./lights";
 import type { Look } from "./DayCycle";
+import { lerpRGB } from "./paint";
 
 /**
  * The light map.
@@ -44,6 +45,9 @@ export class Lighting {
   private readonly registry: LightRegistry;
   private readonly emitters = new Map<Phaser.GameObjects.GameObject, Emitter>();
   private rt: Phaser.GameObjects.RenderTexture | null = null;
+  /** Canvas-renderer fallback: a plain multiplied wash, no light pools. */
+  private shade: Phaser.GameObjects.Rectangle | null = null;
+  private readonly webgl: boolean;
   private rtW = 0;
   private rtH = 0;
   private readonly flames: Phaser.GameObjects.Image[] = [];
@@ -55,6 +59,7 @@ export class Lighting {
   constructor(scene: Phaser.Scene, registry: LightRegistry) {
     this.scene = scene;
     this.registry = registry;
+    this.webgl = scene.renderer.type === Phaser.WEBGL;
     for (let i = 0; i < MAX_FLAMES; i++) {
       this.flames.push(
         scene.add.image(0, 0, "fx_flame").setOrigin(0.5, 0.9).setBlendMode(Phaser.BlendModes.ADD).setVisible(false),
@@ -98,6 +103,20 @@ export class Lighting {
     // Broad daylight: the light map would multiply by white. Skip the pass.
     if (look.darkness < 0.015) {
       this.rt?.setVisible(false);
+      this.shade?.setVisible(false);
+      return;
+    }
+
+    if (!this.webgl) {
+      // Canvas cannot build a coloured light map (and Phaser's canvas
+      // MULTIPLY falls back to plain source-over), so it gets the time of day
+      // as one translucent wash; the flames and halos still glow on top.
+      const shade = this.ensureShade();
+      shade
+        .setPosition(midX - viewW / 2 - MARGIN, midY - viewH / 2 - MARGIN)
+        .setSize(viewW + MARGIN * 2, viewH + MARGIN * 2)
+        .setFillStyle(lerpRGB(look.ambient, 0x000000, 0.6), Math.min(0.82, look.darkness * 1.05))
+        .setVisible(true);
       return;
     }
 
@@ -158,6 +177,8 @@ export class Lighting {
   destroy(): void {
     this.rt?.destroy();
     this.rt = null;
+    this.shade?.destroy();
+    this.shade = null;
     for (const img of [...this.flames, ...this.halos]) img.destroy();
     this.flames.length = 0;
     this.halos.length = 0;
@@ -219,6 +240,17 @@ export class Lighting {
       flame.setVisible(false);
       this.halos[i]!.setVisible(false);
     }
+  }
+
+  private ensureShade(): Phaser.GameObjects.Rectangle {
+    if (!this.shade) {
+      this.shade = this.scene.add
+        .rectangle(0, 0, 16, 16, 0xffffff)
+        .setOrigin(0, 0)
+        .setDepth(DEPTH.weather - 100)
+        .setVisible(false);
+    }
+    return this.shade;
   }
 
   private ensureTarget(viewW: number, viewH: number): Phaser.GameObjects.RenderTexture {

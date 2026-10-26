@@ -139,26 +139,21 @@ function plasterWall(seed: number): Painter {
       p.px(x, y, ramp(PLASTER, v, x, y));
     }
   }
-  // Half-timbering: posts at the joints, a rail, and a brace.
-  const beam = (x0: number, y0: number, x1: number, y1: number) => {
-    p.thickLine(x0, y0, x1, y1, 3, 3, at(WOOD, 2));
-    p.line(x0 - 1, y0, x1 - 1, y1, at(WOOD, 4));
-  };
+  // Half-timbering: a post at every joint and a mid rail. The pattern
+  // repeats every tile, so it stays quiet - a brace or a window on every
+  // tile would turn a long wall into wallpaper.
   p.rect(0, CAP, 3, WALL_H - CAP, at(WOOD, 2));
   p.rect(0, CAP, 1, WALL_H - CAP, at(WOOD, 4));
   p.rect(2, CAP, 1, WALL_H - CAP, at(WOOD, 0));
   p.rect(0, CAP, TILE, 3, at(WOOD, 2));
   p.rect(0, CAP, TILE, 1, at(WOOD, 4));
-  p.rect(0, CAP + 15, TILE, 3, at(WOOD, 2));
-  p.rect(0, CAP + 15, TILE, 1, at(WOOD, 4));
-  p.rect(0, CAP + 17, TILE, 1, at(WOOD, 0));
-  beam(5, CAP + 15, 27, CAP + 3);
-  // A small leaded window in the upper panel.
-  p.rect(18, CAP + 5, 8, 7, at(WOOD, 1));
-  p.rect(19, CAP + 6, 6, 5, rgb("#2b3a4f"));
-  p.px(20, CAP + 7, rgb("#9fb8d0"));
-  p.px(21, CAP + 7, rgb("#6f8aa8"));
-  p.rect(22, CAP + 6, 1, 5, at(WOOD, 1));
+  p.rect(0, CAP + 3, TILE, 1, at(WOOD, 0), 0.6);
+  p.rect(0, CAP + 16, TILE, 3, at(WOOD, 2));
+  p.rect(0, CAP + 16, TILE, 1, at(WOOD, 4));
+  p.rect(0, CAP + 19, TILE, 1, at(WOOD, 0), 0.6);
+  // Peg heads where rails meet the post.
+  p.px(1, CAP + 1, at(WOOD, 0));
+  p.px(1, CAP + 17, at(WOOD, 0));
   wallFoot(p, seed, false);
   return p;
 }

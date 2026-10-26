@@ -194,7 +194,7 @@ export class CombatFx {
     s.vy = vy;
     s.life = 0;
     s.max = life;
-    s.img.setPosition(x, y).setTint(color).setAlpha(1).setScale(1).setVisible(true);
+    s.img.setPosition(x, y).setTint(color).setAlpha(1).setScale(1.5).setVisible(true);
   }
 
   private stepSparks(dt: number): void {
@@ -209,7 +209,7 @@ export class CombatFx {
       s.vx *= 1 - dt * 5;
       s.vy = s.vy * (1 - dt * 5) + 260 * dt;
       s.img.setPosition(s.img.x + s.vx * dt, s.img.y + s.vy * dt);
-      s.img.setAlpha(1 - t).setScale(1 - t * 0.6);
+      s.img.setAlpha(1 - t * t).setScale(1.5 - t);
     }
   }
 }

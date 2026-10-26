@@ -580,10 +580,15 @@ function drawTuft(w: number, h: number, seed: number, blades: RGB[], count: numb
     h,
     (p) => contactShadow(p, w / 2, h - 2, w * 0.38, 2.2, 0.3),
     (p) => {
-      for (let i = 0; i < count; i++) {
-        const bx = w / 2 + (rng() - 0.5) * w * 0.55;
-        const len = h * (0.45 + rng() * 0.5);
-        const bend = (rng() - 0.5) * w * 0.5;
+      // A dense, dark root clump so the tuft reads as a mass, not a glyph.
+      p.ellipse(w / 2, h - 3, w * 0.3, 2.2, at(blades, 0));
+      p.ellipse(w / 2 - 1, h - 4, w * 0.22, 1.8, at(blades, 1));
+      const total = Math.round(count * 1.6);
+      for (let i = 0; i < total; i++) {
+        // Short blades in front, long ones behind: the clump has depth.
+        const bx = w / 2 + (rng() - 0.5) * w * 0.6;
+        const len = h * (0.35 + rng() * 0.6);
+        const bend = (bx - w / 2) * 0.6 + (rng() - 0.5) * w * 0.3;
         const steps = Math.ceil(len);
         for (let s = 0; s < steps; s++) {
           const t = s / steps;

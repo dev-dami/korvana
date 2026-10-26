@@ -85,6 +85,7 @@ export class SpellSystem {
             speed: spell.speed ?? 520,
             life: spell.range / (spell.speed ?? 520),
             radius: spell.radius,
+            color: spell.color,
           },
         );
         this.projectiles.push(projectile);

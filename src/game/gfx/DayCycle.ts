@@ -36,8 +36,8 @@ export interface Look {
 
 /** Ambient light through the day. Hours, then colour. */
 const SKY: Array<[number, RGB]> = [
-  [0, 0x3b4a80],
-  [4.4, 0x3b4a80],
+  [0, 0x43528a],
+  [4.4, 0x43528a],
   [5.4, 0x6a5f96],
   [6.2, 0xd99a8a],
   [7.0, 0xffd6a6],
@@ -45,11 +45,11 @@ const SKY: Array<[number, RGB]> = [
   [10.5, 0xffffff],
   [15.5, 0xffffff],
   [17.0, 0xfff0d8],
-  [18.2, 0xffcc98],
-  [19.0, 0xeda08a],
+  [18.2, 0xffd4a8],
+  [19.0, 0xf4ae94],
   [19.8, 0x8a74a8],
-  [20.9, 0x3b4a80],
-  [24, 0x3b4a80],
+  [20.9, 0x43528a],
+  [24, 0x43528a],
 ];
 
 function skyAt(hour: number): RGB {
@@ -72,6 +72,11 @@ interface BiomeLook {
   /** Extra bloom on top of what the darkness asks for. */
   bloom: number;
   vignette: number;
+  /**
+   * The least light there ever is here, per channel. The Scar never goes
+   * fully dark: the cracks still give off a dull red heat.
+   */
+  glow: RGB;
 }
 
 const g = (saturation: number, contrast: number, brightness: number, r: number, gg: number, b: number): Grade => ({
@@ -84,18 +89,18 @@ const g = (saturation: number, contrast: number, brightness: number, r: number, 
 });
 
 const BIOMES: Record<Biome, BiomeLook> = {
-  meadow: { filter: 0xffffff, grade: g(1.06, 1.05, 1.0, 1.03, 1.01, 0.96), bloom: 0, vignette: 0.32 },
-  beach: { filter: 0xffffff, grade: g(1.06, 1.04, 1.02, 1.03, 1.01, 0.97), bloom: 0, vignette: 0.3 },
-  ocean: { filter: 0xffffff, grade: g(1.05, 1.04, 1.0, 1.0, 1.01, 1.0), bloom: 0, vignette: 0.32 },
-  shallows: { filter: 0xffffff, grade: g(1.05, 1.04, 1.0, 1.0, 1.01, 1.0), bloom: 0, vignette: 0.32 },
-  forest: { filter: 0xe4eedb, grade: g(1.04, 1.07, 1.0, 0.99, 1.02, 0.96), bloom: 0.05, vignette: 0.42 },
-  marsh: { filter: 0xe2e8e0, grade: g(0.88, 1.02, 1.0, 0.98, 1.01, 0.99), bloom: 0.08, vignette: 0.42 },
-  highland: { filter: 0xf0f4fa, grade: g(0.94, 1.06, 1.0, 0.97, 0.99, 1.04), bloom: 0, vignette: 0.34 },
-  peak: { filter: 0xf4f8ff, grade: g(0.9, 1.04, 1.0, 0.96, 0.99, 1.06), bloom: 0.05, vignette: 0.34 },
+  meadow: { filter: 0xffffff, grade: g(1.06, 1.05, 1.0, 1.03, 1.01, 0.96), bloom: 0, vignette: 0.32, glow: 0 },
+  beach: { filter: 0xffffff, grade: g(1.06, 1.04, 1.02, 1.03, 1.01, 0.97), bloom: 0, vignette: 0.3, glow: 0 },
+  ocean: { filter: 0xffffff, grade: g(1.05, 1.04, 1.0, 1.0, 1.01, 1.0), bloom: 0, vignette: 0.32, glow: 0 },
+  shallows: { filter: 0xffffff, grade: g(1.05, 1.04, 1.0, 1.0, 1.01, 1.0), bloom: 0, vignette: 0.32, glow: 0 },
+  forest: { filter: 0xe4eedb, grade: g(1.04, 1.07, 1.0, 0.99, 1.02, 0.96), bloom: 0.05, vignette: 0.42, glow: 0 },
+  marsh: { filter: 0xe2e8e0, grade: g(0.88, 1.02, 1.0, 0.98, 1.01, 0.99), bloom: 0.08, vignette: 0.42, glow: 0 },
+  highland: { filter: 0xf0f4fa, grade: g(0.94, 1.06, 1.0, 0.97, 0.99, 1.04), bloom: 0, vignette: 0.34, glow: 0 },
+  peak: { filter: 0xf4f8ff, grade: g(0.9, 1.04, 1.0, 0.96, 0.99, 1.06), bloom: 0.05, vignette: 0.34, glow: 0 },
   // The Scar: burnt out, drained of colour, a faint ember warmth left in it.
-  scar: { filter: 0xa89890, grade: g(0.5, 1.14, 1.0, 1.08, 0.97, 0.92), bloom: 0.3, vignette: 0.6 },
+  scar: { filter: 0xb0a098, grade: g(0.5, 1.14, 1.0, 1.08, 0.97, 0.92), bloom: 0.3, vignette: 0.6, glow: 0x4a3430 },
   // Underground: cold and dark, so every torch is an event.
-  crypt: { filter: 0xffffff, grade: g(0.82, 1.1, 1.0, 0.95, 0.99, 1.08), bloom: 0.45, vignette: 0.55 },
+  crypt: { filter: 0xffffff, grade: g(0.82, 1.1, 1.0, 0.95, 0.99, 1.08), bloom: 0.45, vignette: 0.55, glow: 0 },
 };
 
 const CRYPT_AMBIENT: RGB = 0x0e1019;
@@ -126,6 +131,7 @@ export class DayCycle {
     grade: g(1, 1, 1, 1, 1, 1),
     bloom: 0,
     vignette: 0.3,
+    glow: 0,
   };
   private first = true;
 
@@ -139,6 +145,7 @@ export class DayCycle {
     this.first = false;
     const b = this.blended;
     b.filter = lerpRGB(b.filter, target.filter, k);
+    b.glow = lerpRGB(b.glow, target.glow, k);
     b.bloom = lerp(b.bloom, target.bloom, k);
     b.vignette = lerp(b.vignette, target.vignette, k);
     for (const key of ["saturation", "contrast", "brightness", "r", "g", "b"] as const) {
@@ -148,7 +155,7 @@ export class DayCycle {
 
     const hour = (((dayFraction % 1) + 1) % 1) * 24;
     const sky = skyAt(hour);
-    const outdoor = this.multiply(sky, b.filter);
+    const outdoor = this.atLeast(this.multiply(sky, b.filter), b.glow);
     const ambient = lerpRGB(outdoor, CRYPT_AMBIENT, this.crypt);
 
     const look = this.look;
@@ -175,6 +182,13 @@ export class DayCycle {
     const morning = Math.max(0, 1 - Math.abs(hour - 6.9) / 1.4);
     const evening = Math.max(0, 1 - Math.abs(hour - 18.6) / 1.5);
     return Math.max(morning, evening);
+  }
+
+  private atLeast(a: RGB, floor: RGB): RGB {
+    const r = Math.max((a >> 16) & 255, (floor >> 16) & 255);
+    const gg = Math.max((a >> 8) & 255, (floor >> 8) & 255);
+    const bl = Math.max(a & 255, floor & 255);
+    return (r << 16) | (gg << 8) | bl;
   }
 
   private multiply(a: RGB, b: RGB): RGB {

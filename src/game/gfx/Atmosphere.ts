@@ -56,7 +56,7 @@ const BIOME_BUDGET: Partial<Record<Biome, Partial<Budget>>> = {
   ocean: { cloud: 3, bird: 1 },
   shallows: { cloud: 3, bird: 1 },
   forest: { mote: 18, firefly: 40, leaf: 18 },
-  marsh: { mote: 8, firefly: 30, mist: 9 },
+  marsh: { mote: 8, firefly: 30, mist: 12 },
   highland: { mote: 6, cloud: 2, mist: 3 },
   peak: { snow: 110, mist: 2 },
   scar: { ash: 80, ember: 26, mist: 2 },
@@ -127,11 +127,12 @@ export class Atmosphere {
 
     const wind = 14 + Math.sin(this.time * 0.13) * 8;
     let lightCount = 0;
-    const margin = 260;
     for (const p of this.particles) {
       if (!p.active) continue;
       p.life += dt;
       const t = p.life / p.max;
+      // Big, slow things (cloud shadows, mist banks) live further off screen.
+      const margin = p.kind === "cloud" ? 760 : p.kind === "mist" ? 420 : 260;
       if (
         t >= 1 ||
         p.x < view.x - margin ||
@@ -218,7 +219,7 @@ export class Atmosphere {
         p.alpha = 0.35 + Math.random() * 0.35;
         break;
       case "firefly":
-        img.setTexture("fx_soft").setScale(0.16 + Math.random() * 0.06).setTint(Math.random() > 0.4 ? 0xd6ff70 : 0xfff07a);
+        img.setTexture("fx_soft").setScale(0.2 + Math.random() * 0.08).setTint(Math.random() > 0.4 ? 0xe2ff8a : 0xfff49a);
         img.setBlendMode(Phaser.BlendModes.ADD);
         p.x = rx();
         p.y = ry();
@@ -244,7 +245,7 @@ export class Atmosphere {
         p.vx = 4 + Math.random() * 6;
         p.vy = (Math.random() - 0.5) * 2;
         p.max = 18 + Math.random() * 14;
-        p.alpha = 0.1 + Math.random() * 0.08;
+        p.alpha = 0.16 + Math.random() * 0.12;
         break;
       case "snow":
         img.setTexture(Math.random() > 0.6 ? "fx_flake" : "fx_dot").setScale(Math.random() > 0.8 ? 1.5 : 1);
@@ -295,7 +296,7 @@ export class Atmosphere {
         break;
       case "cloud":
         img.setTexture("fx_cloud").setScale(2.4 + Math.random() * 1.8, 2 + Math.random() * 1.2);
-        p.x = view.x - 520 + Math.random() * 200;
+        p.x = view.x - 640 + Math.random() * 160;
         p.y = view.y - 100 + Math.random() * (view.height + 200);
         // Clouds already overhead when you arrive, not only drifting in.
         if (this.counts.cloud === 0 && Math.random() > 0.4) p.x = rx();
