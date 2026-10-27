@@ -133,6 +133,50 @@ function heroInHouse(house: string): Look {
   };
 }
 
+/**
+ * The unnamed half of the student body, in House colours. Two faces per House
+ * (`student_<house>` and `student_<house>_2`) so a courtyard of them reads as
+ * a crowd of people rather than a row of the same child.
+ */
+const STUDENT_FACES = [
+  { skin: "#f2c8a4", eye: "#5a7c3a", hair: "#3a2a1e", hairStyle: "short" as HairStyle },
+  { skin: "#b9825e", eye: "#3a2e24", hair: "#1e1814", hairStyle: "braid" as HairStyle },
+];
+const HOUSE_FACES: Record<string, Array<{ skin: string; eye: string; hair: string; hairStyle: HairStyle }>> = {
+  // Never Wren's messy auburn: in a crowd the player must be the one you can find.
+  emberhart: [
+    { ...STUDENT_FACES[0]!, skin: "#e8b890", hair: "#1e1612", hairStyle: "ponytail" },
+    { ...STUDENT_FACES[1]!, hair: "#c87838", hairStyle: "bob" },
+  ],
+  thornwick: [{ ...STUDENT_FACES[0]!, hair: "#7c5a32", hairStyle: "short" }, { ...STUDENT_FACES[1]!, hairStyle: "braid" }],
+  ravelle: [{ ...STUDENT_FACES[0]!, eye: "#4a5a8c", hair: "#e8d8b0", hairStyle: "long" }, { ...STUDENT_FACES[1]!, hairStyle: "slick" }],
+  stillwater: [{ ...STUDENT_FACES[0]!, eye: "#3f6f8e", hair: "#5c4632", hairStyle: "bun" }, { ...STUDENT_FACES[1]!, hair: "#d8c8a0", hairStyle: "short" }],
+};
+
+function studentInHouse(house: string, variant: 0 | 1): Look {
+  const colours = HOUSE_COLOURS[house]!;
+  const face = HOUSE_FACES[house]![variant]!;
+  return {
+    key: variant === 0 ? `student_${house}` : `student_${house}_2`,
+    body: "humanoid",
+    size: "child",
+    ...face,
+    blush: variant === 0,
+    hat: "none",
+    outfit: "robe",
+    robe: BLACK_ROBE,
+    trim: colours.primary,
+    inner: "#ece6d8",
+    accent: colours.secondary,
+    scarf: variant === 0,
+    emblem: colours.primary,
+    legs: "#2b2e38",
+    boots: variant === 0 ? "#3a2a1c" : "#2f2233",
+    // The second face of each House is a reader; the first is not.
+    book: variant === 1 ? colours.primary : undefined,
+  };
+}
+
 export const LOOKS: Record<string, Look> = {
   // --- Wren -----------------------------------------------------------------
   hero: {
@@ -305,6 +349,81 @@ export const LOOKS: Record<string, Look> = {
     inner: "#2c3f36",
     accent: "#6fd0a0",
     boots: "#0e1512",
+  },
+
+  // --- The rest of the school: ambient students and staff --------------------
+  student_emberhart: studentInHouse("emberhart", 0),
+  student_emberhart_2: studentInHouse("emberhart", 1),
+  student_thornwick: studentInHouse("thornwick", 0),
+  student_thornwick_2: studentInHouse("thornwick", 1),
+  student_ravelle: studentInHouse("ravelle", 0),
+  student_ravelle_2: studentInHouse("ravelle", 1),
+  student_stillwater: studentInHouse("stillwater", 0),
+  student_stillwater_2: studentInHouse("stillwater", 1),
+  // Hobb the groundskeeper: weathered, in a work coat and a hood against the
+  // drizzle, with an apron full of trowels.
+  caretaker: {
+    key: "caretaker",
+    age: "old",
+    body: "humanoid",
+    size: "adult",
+    skin: "#c8946c",
+    eye: "#4a4030",
+    brows: "stern",
+    hair: "#8c8478",
+    hairStyle: "short",
+    hat: "hood",
+    hatColor: "#5a5040",
+    outfit: "coat",
+    robe: "#6a5a40",
+    trim: "#8c7a52",
+    inner: "#c9bea0",
+    apron: "#7a5a34",
+    beard: "short",
+    beardColor: "#9a9286",
+    legs: "#4a3e2c",
+    boots: "#3a2a1c",
+    hunch: true,
+  },
+  // Madam Pell, the matron: starched, upright, smelling faintly of liniment.
+  steward: {
+    key: "steward",
+    body: "humanoid",
+    size: "adult",
+    skin: "#e6c0a0",
+    eye: "#5a4a6a",
+    brows: "raised",
+    hair: "#4a3a3a",
+    hairStyle: "bun",
+    hat: "none",
+    outfit: "gown",
+    robe: "#5a6c8c",
+    trim: "#f0ece4",
+    inner: "#f4f0e8",
+    apron: "#f0ece4",
+    boots: "#2a2430",
+  },
+  // Thackery, the library porter: shirtsleeves, waistcoat, spectacles, and a
+  // stack of something heavy under one arm at all times.
+  porter: {
+    key: "porter",
+    body: "humanoid",
+    size: "adult",
+    skin: "#d8a884",
+    eye: "#3a3a30",
+    brows: "soft",
+    hair: "#6a4a2a",
+    hairStyle: "messy",
+    hat: "none",
+    outfit: "coat",
+    robe: "#4a3a2e",
+    trim: "#b89a5c",
+    inner: "#e8e0cc",
+    accent: "#7a2f2f",
+    glasses: true,
+    book: "#5a3a22",
+    legs: "#3a3026",
+    boots: "#2e241c",
   },
 
   // --- The wider world ------------------------------------------------------

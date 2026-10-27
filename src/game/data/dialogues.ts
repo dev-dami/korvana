@@ -1,4 +1,5 @@
 import { ALDEN_DIALOGUES } from "./dialogue/alden";
+import { CIVILIAN_DIALOGUES } from "./dialogue/civilians";
 import { AMELIA_DIALOGUES } from "./dialogue/amelia";
 import { CORVIN_DIALOGUES } from "./dialogue/corvin";
 import { FENNICK_DIALOGUES } from "./dialogue/fennick";
@@ -45,6 +46,7 @@ export const DIALOGUES: Record<string, DialogueTree> = {
   ...SEREN_DIALOGUES,
   ...ILSE_DIALOGUES,
   ...VALE_DIALOGUES,
+  ...CIVILIAN_DIALOGUES,
 };
 
 export function dialogueById(id: string): DialogueTree | undefined {

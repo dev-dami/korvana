@@ -4,6 +4,7 @@ import { SPELLS } from "../data/spells";
 import type { Spell } from "../data/spells";
 import { ACTOR_BODY_OFFSET, dirVector } from "../entities/Actor";
 import { Projectile } from "../entities/Projectile";
+import type { Bystanders } from "../entities/Projectile";
 import type { Actor } from "../entities/Actor";
 import type { GameState } from "../state/GameState";
 import type { WorldManager } from "../world/WorldManager";
@@ -21,6 +22,12 @@ export class SpellSystem {
   private readonly scene: Phaser.Scene;
   private readonly state: GameState;
   private readonly world: WorldManager;
+
+  /**
+   * People a spell can hit without hurting: bolts and novas tell them, and they
+   * answer (usually with a duel). Set by the world scene; null anywhere else.
+   */
+  bystanders: Bystanders | null = null;
 
   private readonly cooldowns = new Map<string, number>();
   private readonly projectiles: Projectile[] = [];
@@ -86,6 +93,7 @@ export class SpellSystem {
             life: spell.range / (spell.speed ?? 520),
             radius: spell.radius,
             color: spell.color,
+            spell: id,
           },
         );
         this.projectiles.push(projectile);
@@ -120,7 +128,7 @@ export class SpellSystem {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
       if (!projectile) continue;
-      const hit = projectile.update(dt, this.world, targets);
+      const hit = projectile.update(dt, this.world, targets, this.bystanders);
       if (hit) {
         onDamage(hit, projectile.damage);
       }
@@ -151,6 +159,9 @@ export class SpellSystem {
       if (caster.distanceTo(target) <= spell.range) {
         onDamage(target, spell.damage);
       }
+    }
+    for (const actor of this.bystanders?.actors ?? []) {
+      if (actor.alive && caster.distanceTo(actor) <= spell.range) this.bystanders?.onSpellHit(actor, spell.id);
     }
 
     const ring = this.scene.add

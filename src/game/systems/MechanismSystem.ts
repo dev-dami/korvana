@@ -804,6 +804,18 @@ export class MechanismSystem implements MechContext {
     return this.current?.level.def.id ?? null;
   }
 
+  /**
+   * True while the player is mid-door, mid-fall or running from a boulder:
+   * moments other systems must not interrupt with something of their own.
+   */
+  get inSequence(): boolean {
+    if (this.busy || this.falling > 0) return true;
+    for (const mech of this.current?.mechs.values() ?? []) {
+      if (mech instanceof Escape && mech.running) return true;
+    }
+    return false;
+  }
+
   /** Looks a mechanism up by level and id (debugging and tests). */
   mechanism(levelId: string, id: string): Mech | undefined {
     return this.runtimes.find((r) => r.level.def.id === levelId)?.mechs.get(id);

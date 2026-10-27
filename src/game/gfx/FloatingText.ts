@@ -111,3 +111,34 @@ export function calloutText(
 
   return text;
 }
+
+/**
+ * A line said out loud by someone in the world - "Oi!", a challenge, a
+ * concession. Unlike floatText it does not animate itself: the speaker may be
+ * running, so whoever owns the bark moves it and fades it (see
+ * systems/CivilianSystem.ts).
+ */
+export function barkText(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  message: string,
+  color = "#f8f1e2",
+): Phaser.GameObjects.Text {
+  const text = scene.add
+    .text(x, y, message, {
+      fontFamily: FONT_BODY,
+      fontSize: "14px",
+      color,
+      fontStyle: "bold",
+      align: "center",
+      wordWrap: { width: 220 },
+      padding: { x: 7, y: 9 },
+    })
+    .setOrigin(0.5, 1)
+    .setResolution(TEXT_RES)
+    .setDepth(TEXT_DEPTH + 2);
+  text.setStroke("#0a0b10", 4);
+  text.setShadow(0, 2, "#000000", 2, false, true);
+  return text;
+}
