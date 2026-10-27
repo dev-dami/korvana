@@ -1,701 +1,725 @@
 import Phaser from "phaser";
 
 import { DUEL_ENDED, encounterById } from "../data/encounters";
-import type { DuelLaunch, DuelResult, EncounterAction, EncounterDef } from "../data/encounters";
+import type { DuelArena, DuelLaunch, DuelResult, DuelStyle, EncounterDef } from "../data/encounters";
 import { ITEMS } from "../data/items";
+import { landmarkById } from "../data/landmarks";
 import { loreById } from "../data/lore";
 import { SPELLS } from "../data/spells";
 import { weaponById } from "../data/weapons";
-import { DPR, TEXT_RES, viewHeight, viewWidth } from "../display";
-import { attackKey, castKey, idleKey, sheetKey } from "../gfx/characters";
-import { arenaLayout, bakeArena, bakeRuneRing } from "../gfx/duelArt";
-import { heroLook } from "../gfx/looks";
-import { displayText } from "../gfx/fonts";
-import { roundPortraitKey } from "../ui/Hud";
-import { medallionKey } from "../ui/icons";
-import {
-  capsuleBar,
-  COLOR_DIM,
-  COLOR_GOLD,
-  COLOR_INK,
-  COLOR_INK_SOFT,
-  Frame,
-  heading,
-  HEALTH,
-  HEALTH_DARK,
-  keyBadge,
-  label,
-  MANA,
-  MANA_DARK,
-  uiCamera,
-  WARD,
-} from "../ui/theme";
+import { TILE } from "../config";
+import { DPR, viewHeight, viewWidth } from "../display";
+import { heroLook, LOOKS } from "../gfx/looks";
+import { DuelAI } from "../duel/DuelAI";
+import { DuelArenaView } from "../duel/DuelArena";
+import { DuelCamera, makeProjection } from "../duel/DuelCamera";
+import { DuelHud } from "../duel/DuelHud";
+import { DuelSim, Fighter } from "../duel/DuelSim";
+import type { AttackSpec, Bolt, CastSpec, DuelEvents } from "../duel/DuelSim";
+import { FighterView } from "../duel/FighterView";
+import type { WeaponKind } from "../duel/FighterView";
 import type { WorldScene } from "./WorldScene";
 
-/** Menu rows. Eight is more than any character can currently fill. */
-const MAX_ACTIONS = 8;
-const PLATE_W = 360;
-const PLATE_H = 96;
-const PORTRAIT = 72;
-
-type Phase = "menu" | "busy" | "over";
-
 /**
- * A turn-based duel, launched as an overlay from the world. Deliberately
- * separate from the real-time combat in WorldScene - the sparring ring is a
- * different game, and the scene boundary keeps them from tangling.
+ * A real-time duel, face to face, launched as an overlay from the world.
  *
- * Everything specific to a fight lives in data/encounters.ts, so the sparring
- * shade and the story's final antagonist run through the same code.
+ * The rules live in duel/DuelSim, the opponent's mind in duel/DuelAI, and the
+ * look in duel/DuelArena + duel/FighterView. This scene is the stage manager:
+ * it turns keys into the player's Intent, routes the sim's events into sound,
+ * sparks and words, frames the camera, and settles the outcome with the world
+ * exactly as the old turn-based duel did - rewards, story events, music holds.
  *
- * The presentation is a staged duel: a vaulted hall with a rune circle in the
- * floor, both duellists drawn large and breathing, ornate plates for each
- * side, a parchment log, and the action menu on an ink panel. Every action
- * has a little theatre - a lunge, a bolt of light, a ward bubble, numbers
- * that jump off the target.
+ * The arena is drawn on the main camera through a Blocky filter, so the
+ * projected floor and scaled sprites resolve into one consistent chunky pixel
+ * grid. The HUD has a camera of its own and stays crisp.
  */
+
+type Phase = "intro" | "fight" | "outro";
+
+const PIXEL = 3;
+const INTRO_SECONDS = 2.1;
+
+interface BoltView {
+  glow: Phaser.GameObjects.Image;
+  core: Phaser.GameObjects.Image;
+  last: number;
+}
+
 export class BattleScene extends Phaser.Scene {
   private world!: WorldScene;
   private encounter!: EncounterDef;
+  private challenger: string | undefined;
 
-  private phase: Phase = "menu";
-  private enemyHealth = 0;
-  private wardTurns = 0;
-  private log: string[] = [];
-  private turnsTaken = 0;
+  private sim!: DuelSim;
+  private ai!: DuelAI;
+  private cam!: DuelCamera;
+  private arena!: DuelArenaView;
+  private hud!: DuelHud;
+  private pView!: FighterView;
+  private eView!: FighterView;
+  private hudCam!: Phaser.Cameras.Scene2D.Camera;
+  private fx!: Phaser.GameObjects.Graphics;
+  private readonly boltViews = new Map<Bolt, BoltView>();
+  private readonly proj = makeProjection();
 
-  private enemySprite!: Phaser.GameObjects.Sprite;
-  private playerSprite!: Phaser.GameObjects.Sprite;
-  private playerLook = "hero";
-  private playerHome = { x: 0, y: 0 };
-  private enemyHome = { x: 0, y: 0 };
-  private bars!: Phaser.GameObjects.Graphics;
-  private wardBubble!: Phaser.GameObjects.Graphics;
-  private ring!: Phaser.GameObjects.Image;
-  private flames: Phaser.GameObjects.Image[] = [];
-  private frames: Frame[] = [];
-  private playerStats!: Phaser.GameObjects.Text;
-  private enemyStats!: Phaser.GameObjects.Text;
-  private titleText!: Phaser.GameObjects.Text;
-  private logText!: Phaser.GameObjects.Text;
-  private menuTitle!: Phaser.GameObjects.Text;
-  private menuTexts: Phaser.GameObjects.Text[] = [];
-  private menuKeys: Phaser.GameObjects.Text[] = [];
-  private menuFrame!: Frame;
-  private logFrame!: Frame;
-  private actions: Array<{ label: string; run: () => void }> = [];
-  private enemyGhost = 1;
-  private playerGhost = 1;
-  /**
-   * Menu indices chosen since the last frame.
-   *
-   * Filled from key events rather than polled with JustDown: Phaser clears a
-   * key's justDown flag on keyup, so a press that begins and ends between two
-   * frames is dropped entirely - which a low frame rate makes routine.
-   */
-  private readonly pressed = new Set<number>();
+  private phase: Phase = "intro";
+  private phaseT = 0;
+  private routing: "world" | "hud" = "world";
+  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private readonly pressed = new Set<string>();
+  private spellCooldowns = new Map<string, number>();
+  private yieldArmed = 0;
+  private finished = false;
+  private slowmo = 0;
 
   constructor() {
     super("battle");
   }
 
-  private challenger: string | undefined;
-
   init(data: Partial<DuelLaunch>): void {
     this.challenger = data.challenger;
     this.encounter = encounterById(data.encounter ?? "sparring") ?? encounterById("sparring")!;
-    this.enemyHealth = this.encounter.health;
-    this.wardTurns = 0;
-    this.turnsTaken = 0;
-    this.phase = "menu";
-    this.log = [`${this.encounter.name} squares up.`];
   }
 
   create(): void {
     this.world = this.scene.get("world") as WorldScene;
-    uiCamera(this);
+    const W = viewWidth(this);
+    const H = viewHeight(this);
 
-    // Same trap as the world scene: a scene that is launched, stopped and
-    // launched again re-runs create() on the *same* instance, so anything
-    // pushed into a field-initialised array accumulates destroyed objects.
-    // Left alone, the second duel draws its menu into the previous, dead texts
-    // and shows no options at all.
-    this.menuTexts = [];
-    this.menuKeys = [];
-    this.flames = [];
-    this.frames = [];
+    // A relaunched scene reuses this instance, so reset everything create() fills.
+    this.phase = "intro";
+    this.phaseT = 0;
+    this.finished = false;
+    this.slowmo = 0;
+    this.yieldArmed = 0;
     this.pressed.clear();
-    this.badges = null;
-    this.enemyGhost = 1;
-    this.playerGhost = 1;
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      for (const frame of this.frames) frame.destroy();
-      this.frames = [];
-    });
+    this.boltViews.clear();
+    this.spellCooldowns = new Map();
 
-    // Duel music while this scene lives; releasing the hold lets the world's zone back in.
+    this.setupCameras(W, H);
+
+    // Music: the duel theme while this scene lives.
     this.world.audio.holdZone(this.encounter.boss ? "boss" : "battle", "duel");
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.world.audio.holdZone(null, "duel"));
-
-    const W = viewWidth(this);
-    const H = viewHeight(this);
-    const L = arenaLayout(W, H);
-    const accent = this.encounter.boss ? "#6fd0a0" : "#8fb4ff";
-    const accentHex = Phaser.Display.Color.HexStringToColor(accent).color;
-
-    // --- the hall --------------------------------------------------------------
-    this.add.image(0, 0, bakeArena(this, W, H, accent)).setOrigin(0).setScale(1 / DPR);
-    this.ring = this.add
-      .image(L.ringX, L.ringY, bakeRuneRing(this, L.ringRX, L.ringRY))
-      .setScale(1 / DPR)
-      .setTint(accentHex)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setAlpha(0.6);
-    this.tweens.add({ targets: this.ring, alpha: 0.95, duration: 1600, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
-    for (const b of L.braziers) {
-      const flame = this.add
-        .image(b.x, b.y - 22, "fx_glow")
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setScale(0.9)
-        .setTint(0xffa040);
-      this.flames.push(flame);
-    }
-
-    // --- duellists ---------------------------------------------------------------
-    this.playerLook = heroLook(this.world.state.house);
-    const unit = Math.max(3, Math.round((H * 0.34) / 48));
-    this.playerHome = { x: L.ringX - L.ringRX * 0.55, y: L.ringY + L.ringRY * 0.35 };
-    this.enemyHome = { x: L.ringX + L.ringRX * 0.55, y: L.ringY + L.ringRY * 0.35 };
-
-    const shadows = this.add.graphics();
-    shadows.fillStyle(0x000000, 0.45);
-    shadows.fillEllipse(this.playerHome.x, this.playerHome.y - 2, 22 * unit, 6 * unit);
-    shadows.fillEllipse(this.enemyHome.x, this.enemyHome.y - 2, 22 * unit, 6 * unit);
-
-    this.playerSprite = this.add
-      .sprite(this.playerHome.x, this.playerHome.y, sheetKey(this.playerLook))
-      .setOrigin(0.5, 1)
-      .setScale(unit);
-    this.playerSprite.anims.play(idleKey(this.playerLook, "right"));
-
-    const enemyLook = this.textures.exists(sheetKey(this.encounter.look)) ? this.encounter.look : "shade";
-    const enemyScale = Math.max(3, Math.round(unit * ((this.encounter.scale ?? 4) / 4)));
-    this.enemySprite = this.add
-      .sprite(this.enemyHome.x, this.enemyHome.y, sheetKey(enemyLook))
-      .setOrigin(0.5, 1)
-      .setScale(enemyScale);
-    this.enemySprite.anims.play(idleKey(enemyLook, "left"));
-
-    this.wardBubble = this.add.graphics();
-
-    // --- plates -------------------------------------------------------------------
-    this.bars = this.add.graphics().setDepth(20);
-    const plateY = 22;
-    this.frames.push(new Frame(this, "ink").draw(24, plateY, PLATE_W, PLATE_H).setDepth(10));
-    this.frames.push(new Frame(this, "ink").draw(W - 24 - PLATE_W, plateY, PLATE_W, PLATE_H).setDepth(10));
-    const medal = medallionKey(this, PORTRAIT + 10);
-    const pCx = 24 + 14 + PORTRAIT / 2;
-    const eCx = W - 24 - 14 - PORTRAIT / 2;
-    const pCy = plateY + PLATE_H / 2;
-    this.add.image(pCx, pCy, roundPortraitKey(this, this.playerLook, PORTRAIT)).setScale(1 / DPR).setDepth(21);
-    this.add.image(pCx, pCy, medal).setScale(1 / DPR).setDepth(22);
-    this.add.image(eCx, pCy, roundPortraitKey(this, enemyLook, PORTRAIT)).setScale(1 / DPR).setDepth(21).setFlipX(true);
-    this.add.image(eCx, pCy, medal).setScale(1 / DPR).setDepth(22);
-
-    heading(this, this.world.state.player.name, { size: 21, color: "#f0deaa", align: "left" })
-      .setPosition(pCx + PORTRAIT / 2 + 14, plateY + 12)
-      .setDepth(21);
-    heading(this, this.encounter.name, { size: 19, color: this.encounter.boss ? "#a8f0c8" : "#f0deaa", align: "right" })
-      .setOrigin(1, 0)
-      .setPosition(eCx - PORTRAIT / 2 - 14, plateY + 13)
-      .setDepth(21);
-    this.playerStats = label(this, "", { size: 13, color: "#fff4e6", bold: true }).setOrigin(1, 0.5).setDepth(21);
-    this.playerStats.setStroke("#1a0808", 3);
-    this.enemyStats = label(this, "", { size: 13, color: "#fff4e6", bold: true }).setOrigin(0, 0.5).setDepth(21);
-    this.enemyStats.setStroke("#1a0808", 3);
-
-    this.titleText = this.add
-      .text(W / 2, plateY + 14, "", displayText({ size: 26, color: "#e9d9a6" }))
-      .setOrigin(0.5, 0)
-      .setResolution(TEXT_RES)
-      .setDepth(21);
-    this.titleText.setShadow(0, 2, "#000000", 6, false, true);
-
-    // --- log and menu ----------------------------------------------------------------
-    this.logFrame = new Frame(this, "parchment").setDepth(10);
-    this.frames.push(this.logFrame);
-    this.logText = label(this, "", { size: 16, color: COLOR_INK, lineSpacing: 6 }).setDepth(21);
-    this.menuFrame = new Frame(this, "ink").setDepth(10);
-    this.frames.push(this.menuFrame);
-    this.menuTitle = heading(this, "", { size: 16, color: COLOR_GOLD, align: "left" }).setDepth(21);
-
-    for (let i = 0; i < MAX_ACTIONS; i++) {
-      const text = label(this, "", { size: 16, color: "#ece4d0" }).setOrigin(0, 0.5).setDepth(21);
-      text.setInteractive({ useHandCursor: true });
-      text.on("pointerdown", () => this.pressed.add(i));
-      text.on("pointerover", () => text.setColor("#ffe6a0"));
-      text.on("pointerout", () => text.setColor("#ece4d0"));
-      this.menuTexts.push(text);
-      this.menuKeys.push(label(this, "", { size: 12, color: "#1a1208", bold: true }).setOrigin(0.5).setDepth(22));
-    }
-
-    const codes = [
-      Phaser.Input.Keyboard.KeyCodes.ONE,
-      Phaser.Input.Keyboard.KeyCodes.TWO,
-      Phaser.Input.Keyboard.KeyCodes.THREE,
-      Phaser.Input.Keyboard.KeyCodes.FOUR,
-      Phaser.Input.Keyboard.KeyCodes.FIVE,
-      Phaser.Input.Keyboard.KeyCodes.SIX,
-      Phaser.Input.Keyboard.KeyCodes.SEVEN,
-      Phaser.Input.Keyboard.KeyCodes.EIGHT,
-    ];
-    codes.forEach((code, index) => {
-      this.input.keyboard?.addKey(code).on("down", () => {
-        this.world.audio.unlock();
-        this.pressed.add(index);
-      });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.world.audio.holdZone(null, "duel");
+      this.hud?.destroy();
+      this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, this.route, this);
     });
 
-    // The duellists step into the ring.
-    this.playerSprite.x -= 60;
-    this.enemySprite.x += 60;
-    this.playerSprite.setAlpha(0);
-    this.enemySprite.setAlpha(0);
-    this.tweens.add({ targets: this.playerSprite, x: this.playerHome.x, alpha: 1, duration: 500, ease: "Cubic.easeOut" });
-    this.tweens.add({ targets: this.enemySprite, x: this.enemyHome.x, alpha: 1, duration: 500, ease: "Cubic.easeOut", delay: 120 });
-
-    this.buildActions();
-    this.render();
-  }
-
-  update(time: number, delta: number): void {
-    // Flames lick; the ward shimmers; bars catch up with the damage.
-    for (let i = 0; i < this.flames.length; i++) {
-      const f = this.flames[i]!;
-      f.setScale(0.85 + Math.sin(time / 90 + i * 2) * 0.06 + Math.sin(time / 37 + i) * 0.03).setAlpha(0.75 + Math.sin(time / 60 + i) * 0.12);
-    }
-    const dt = delta / 1000;
-    const ef = Math.max(0, this.enemyHealth / this.encounter.health);
-    const pf = this.world.state.player.health / this.world.state.player.maxHealth;
-    this.enemyGhost = ef < this.enemyGhost ? Math.max(ef, this.enemyGhost - dt * 0.4) : ef;
-    this.playerGhost = pf < this.playerGhost ? Math.max(pf, this.playerGhost - dt * 0.4) : pf;
-    this.drawBars();
-    this.drawWard(time);
-
-    if (this.pressed.size === 0) return;
-
-    const chosen = [...this.pressed];
-    this.pressed.clear();
-    if (this.phase !== "menu") return;
-
-    for (const index of chosen) {
-      const action = this.actions[index];
-      if (action) {
-        action.run();
-        return;
-      }
-    }
-  }
-
-  private buildActions(): void {
+    const enc = this.encounter;
     const state = this.world.state;
-    this.actions = [];
+    const style: DuelStyle = enc.style ?? defaultStyle(enc.look);
+    const skill = enc.skill ?? 0.5;
+    const arenaId = enc.arena ?? this.arenaFromWorld();
 
-    this.actions.push({
-      label: `Attack with the ${weaponById(state.player.weapon).name}`,
-      run: () => this.playerAttack(),
+    this.cam = new DuelCamera();
+    this.cam.resize(W, H);
+    this.arena = new DuelArenaView(this, arenaId, W, H, this.cam.horizonY);
+    const ambient = this.arena.theme.ambient;
+
+    // --- the duellists -----------------------------------------------------------
+    const weapon = weaponById(state.player.weapon);
+    const reach = weapon.kind === "greatsword" ? 205 : weapon.kind === "dagger" ? 140 : 172;
+    const playerLight: AttackSpec = {
+      kind: "light",
+      windup: weapon.kind === "greatsword" ? 0.13 : 0.09,
+      active: 0.08,
+      recover: 0.24,
+      reach,
+      damage: Math.round(weapon.light.damage * 1.35),
+      stamina: 11,
+      knock: 80,
+    };
+    const playerHeavy: AttackSpec = {
+      kind: "heavy",
+      windup: weapon.kind === "greatsword" ? 0.42 : 0.34,
+      active: 0.1,
+      recover: 0.42,
+      reach: reach + 20,
+      damage: Math.round(weapon.heavy.damage * 1.35),
+      stamina: 24,
+      knock: 200,
+      step: 45,
+    };
+    const player = new Fighter({
+      side: "player",
+      name: state.player.name,
+      hp: Math.max(1, state.player.health),
+      maxHp: state.player.maxHealth,
+      mana: state.player.mana,
+      maxMana: state.player.maxMana,
+      speed: 270,
+      canGuard: true,
+      light: playerLight,
+      heavy: playerHeavy,
+      yields: false,
     });
 
-    for (const id of state.player.learnedSpells) {
-      const spell = SPELLS[id];
-      if (!spell || spell.damage <= 0) continue;
-      if (this.actions.length >= MAX_ACTIONS - 2) break;
-      this.actions.push({
-        label: `Cast ${spell.name}  (${spell.manaCost} mana)`,
-        run: () => this.playerCast(id),
-      });
-    }
-
-    this.actions.push({
-      label: "Ward  (halve the next two blows)",
-      run: () => this.playerWard(),
+    const enemyAttacks = DuelAI.attacks(enc, style, skill);
+    const enemy = new Fighter({
+      side: "enemy",
+      name: enc.name,
+      hp: enc.health,
+      maxHp: enc.health,
+      mana: 120,
+      maxMana: 120,
+      speed: style === "beast" ? 300 : style === "magic" ? 230 : 245,
+      canGuard: style !== "beast",
+      light: enemyAttacks.light,
+      heavy: enemyAttacks.heavy,
+      yields: enc.friendly === true,
     });
 
-    if (!this.encounter.noYield) {
-      this.actions.push({
-        label: "Yield",
-        run: () => this.finish(false, "You lower your wand."),
+    this.sim = new DuelSim(player, enemy, this.duelEvents());
+    this.sim.tonics = () => this.world.inventory.count("lesser_tonic");
+    this.sim.useTonic = () => {
+      if (!this.world.inventory.remove("lesser_tonic", 1)) return 0;
+      const before = player.hp;
+      player.hp = Math.min(player.maxHp, player.hp + 40);
+      return Math.round(player.hp - before);
+    };
+    this.ai = new DuelAI(this.sim, enemy, enc, style, skill, boltColor(enc));
+
+    const playerLook = heroLook(state.house);
+    const enemyLook = this.textures.exists(`char_${enc.look}`) ? enc.look : "shade";
+    this.pView = new FighterView(this, {
+      look: playerLook,
+      scale: 3,
+      weapon: weaponKind(weapon.kind),
+      bladeColor: weapon.color,
+      ambient,
+      floats: false,
+    });
+    this.eView = new FighterView(this, {
+      look: enemyLook,
+      scale: 3 * ((enc.scale ?? 4) / 4),
+      weapon: enemyWeapon(enemyLook, style),
+      bladeColor: enemyBlade(enemyLook),
+      ambient,
+      floats: LOOKS[enemyLook]?.floats === true,
+    });
+    this.fx = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD).setDepth(50000);
+
+    // --- HUD on its own camera ------------------------------------------------------
+    this.inHud(() => {
+      this.hud = new DuelHud(this, W, H, {
+        playerName: state.player.name,
+        playerLook,
+        enemyName: enc.name,
+        enemyLook,
+        boss: enc.boss === true,
+        friendly: enc.friendly === true,
       });
+    });
+
+    this.bindKeys();
+
+    // The intro: the camera sweeps round from behind the opponent.
+    this.cam.frame(player.x, player.z, enemy.x, enemy.z, 0, true);
+    this.cam.yaw += Math.PI * 0.85;
+    this.cam.dist *= 1.6;
+    this.time.delayedCall(450, () => {
+      this.inHud(() => this.hud.caption(enc.name, enc.openingLine ?? `${enc.name} squares up.`, 2.6));
+    });
+    this.time.delayedCall(INTRO_SECONDS * 1000 - 350, () => this.inHud(() => this.hud.banner("Duel!", "#f6dc8c", "#e09040", 72)));
+  }
+
+  // --- cameras ------------------------------------------------------------------
+
+  private setupCameras(W: number, H: number): void {
+    const main = this.cameras.main;
+    main.setZoom(DPR).setOrigin(0, 0).setBackgroundColor("#05060a");
+    this.hudCam = this.cameras.add(0, 0, Math.round(W * DPR), Math.round(H * DPR));
+    this.hudCam.setZoom(DPR).setOrigin(0, 0);
+
+    // Every object is created on one camera or the other: route as they arrive.
+    this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, this.route, this);
+
+    if (this.renderer.type === Phaser.WEBGL && main.filters) {
+      try {
+        main.filters.internal.addBlocky({ size: Math.round(PIXEL * DPR) });
+        main.filters.external.addVignette(0.5, 0.5, 0.95, 0.22, 0x030306);
+      } catch (err) {
+        console.warn("Duel filters unavailable", err);
+      }
     }
   }
 
-  // --- player turns ------------------------------------------------------
-
-  private playerAttack(): void {
-    const weapon = weaponById(this.world.state.player.weapon);
-    const damage = Math.round(weapon.light.damage * (0.85 + Math.random() * 0.4));
-    this.enemyHealth -= damage;
-    this.world.audio.playAttack(false, true);
-    this.pushLog(`You swing the ${weapon.name} for ${damage}.`);
-    this.lunge(this.playerSprite, this.playerHome, 1, attackKey(this.playerLook, "right"), idleKey(this.playerLook, "right"), () => this.hitEnemy(damage));
-
-    if (this.enemyHealth <= 0) {
-      this.finish(true, this.encounter.victoryText);
-      return;
-    }
-    this.enemyTurn();
+  private route(obj: Phaser.GameObjects.GameObject): void {
+    if (this.routing === "hud") this.cameras.main.ignore(obj);
+    else this.hudCam.ignore(obj);
   }
 
-  private playerCast(id: string): void {
+  private inHud(fn: () => void): void {
+    const prev = this.routing;
+    this.routing = "hud";
+    try {
+      fn();
+    } finally {
+      this.routing = prev;
+    }
+  }
+
+  // --- input --------------------------------------------------------------------
+
+  private bindKeys(): void {
+    const kb = this.input.keyboard!;
+    const C = Phaser.Input.Keyboard.KeyCodes;
+    kb.addCapture([C.SPACE, C.UP, C.DOWN, C.LEFT, C.RIGHT, C.SHIFT]);
+    this.keys = {
+      left: kb.addKey(C.A),
+      right: kb.addKey(C.D),
+      up: kb.addKey(C.W),
+      down: kb.addKey(C.S),
+      left2: kb.addKey(C.LEFT),
+      right2: kb.addKey(C.RIGHT),
+      up2: kb.addKey(C.UP),
+      down2: kb.addKey(C.DOWN),
+      guard: kb.addKey(C.SHIFT),
+      guard2: kb.addKey(C.F),
+    };
+    const tap = (code: number, action: string) =>
+      kb.addKey(code).on("down", () => {
+        this.world.audio.unlock();
+        this.pressed.add(action);
+      });
+    tap(C.Z, "light");
+    tap(C.X, "heavy");
+    tap(C.C, "dodge");
+    tap(C.SPACE, "cast");
+    tap(C.Q, "quaff");
+    tap(C.ESC, "yield");
+    [C.ONE, C.TWO, C.THREE, C.FOUR, C.FIVE, C.SIX].forEach((code, i) => tap(code, `spell${i}`));
+  }
+
+  private readPlayer(): void {
+    const k = this.keys;
+    const intent = this.sim.player.intent;
+    const held = (a: Phaser.Input.Keyboard.Key, b: Phaser.Input.Keyboard.Key) => a.isDown || b.isDown;
+    intent.advance = (held(k.right!, k.right2!) ? 1 : 0) - (held(k.left!, k.left2!) ? 1 : 0);
+    intent.strafe = (held(k.up!, k.up2!) ? 1 : 0) - (held(k.down!, k.down2!) ? 1 : 0);
+    intent.guard = k.guard!.isDown || k.guard2!.isDown;
+
+    const pressed = this.pressed;
+    if (pressed.size === 0) return;
+    const state = this.world.state;
+
+    for (let i = 0; i < 6; i++) {
+      if (!pressed.has(`spell${i}`)) continue;
+      const id = state.player.learnedSpells[i];
+      if (id) {
+        state.player.selectedSpell = id;
+        this.world.audio.playUi("select");
+      }
+    }
+    if (pressed.has("light")) intent.light = true;
+    if (pressed.has("heavy")) intent.heavy = true;
+    if (pressed.has("dodge")) intent.dodge = true;
+    if (pressed.has("quaff")) {
+      if (this.world.inventory.count("lesser_tonic") > 0) intent.quaff = true;
+      else this.popAt(this.pView, "No tonic", "#c9c1a8", 18);
+    }
+    if (pressed.has("cast")) {
+      if (this.sim.lock) this.sim.pushLock();
+      else this.tryCast();
+    }
+    if (pressed.has("yield")) this.tryYield();
+    pressed.clear();
+  }
+
+  private tryCast(): void {
+    const state = this.world.state;
+    const id = state.player.selectedSpell;
     const spell = SPELLS[id];
-    if (!spell) return;
-    if (!this.world.state.spendMana(spell.manaCost)) {
+    if (!spell || !this.sim.player.free) return;
+    const ready = this.spellCooldowns.get(id) ?? 0;
+    if (this.sim.now < ready) return;
+    const spec = castSpecFor(id);
+    if (!spec) return;
+    if (this.sim.player.mana < spec.mana) {
       this.world.audio.playUi("error");
-      this.pushLog("Not enough mana.");
-      this.render();
+      this.popAt(this.pView, "No mana", "#8fb4ff", 18);
       return;
     }
+    this.sim.player.intent.cast = spec;
+    this.spellCooldowns.set(id, this.sim.now + spell.cooldown / 1000);
+  }
 
-    const damage = spell.damage + Math.floor(Math.random() * 4);
-    this.enemyHealth -= damage;
-    this.world.audio.playSpell(spell.kind);
-    this.pushLog(`You cast ${spell.name} for ${damage}.`);
-    this.castBolt(spell.color, () => this.hitEnemy(damage, spell.color));
-
-    if (this.enemyHealth <= 0) {
-      this.finish(true, this.encounter.victoryText);
+  private tryYield(): void {
+    if (this.encounter.noYield) {
+      this.inHud(() => this.hud.caption("", "There is no yielding from this one.", 2));
       return;
     }
-    this.enemyTurn();
-  }
-
-  private playerWard(): void {
-    this.wardTurns = 2;
-    this.world.audio.playUi("select");
-    this.pushLog("You raise a ward.");
-    this.playerSprite.anims.play(castKey(this.playerLook, "right"));
-    this.time.delayedCall(320, () => this.playerSprite.anims.play(idleKey(this.playerLook, "right")));
-    this.enemyTurn();
-  }
-
-  // --- enemy turn --------------------------------------------------------
-
-  private enemyTurn(): void {
-    this.phase = "busy";
-    this.turnsTaken++;
-    this.render();
-
-    this.time.delayedCall(620, () => {
-      const action = this.pickAction();
-      let damage =
-        action.max > 0 ? action.min + Math.floor(Math.random() * (action.max - action.min + 1)) : 0;
-
-      let warded = false;
-      if (this.wardTurns > 0 && damage > 0) {
-        this.wardTurns--;
-        damage = Math.ceil(damage / 2);
-        warded = true;
-        this.pushLog("The ward holds.");
-      }
-
-      this.pushLog(action.text.replace("{name}", this.encounter.name).replace("{d}", String(damage)));
-
-      const enemyLook = this.enemySprite.texture.key.replace(/^char_/, "");
-      if (damage > 0) {
-        this.lunge(this.enemySprite, this.enemyHome, -1, attackKey(enemyLook, "left"), idleKey(enemyLook, "left"), () => {
-          this.world.audio.playHurt();
-          this.playerSprite.setTint(0xff9a9a);
-          this.time.delayedCall(200, () => this.playerSprite.clearTint());
-          this.cameras.main.shake(160, 0.006);
-          this.popNumber(this.playerSprite.x, this.playerSprite.y - this.playerSprite.displayHeight * 0.8, `-${damage}`, warded ? "#ffe08a" : "#ff8a7a");
-          if (warded) this.flashWard();
-        });
-        this.world.state.damage(damage);
-      } else {
-        // A turn spent on itself: it glows.
-        this.enemySprite.anims.play(castKey(enemyLook, "left"));
-        this.time.delayedCall(360, () => this.enemySprite.anims.play(idleKey(enemyLook, "left")));
-      }
-
-      if (this.world.state.player.health <= 0) {
-        // Losing is a setback, not a dead end: you wake up at the last
-        // checkpoint rather than in the middle of another attempt.
-        this.world.state.player.health = Math.max(1, Math.round(this.world.state.player.maxHealth * 0.4));
-        this.finish(false, this.encounter.defeatText);
-        return;
-      }
-
-      this.phase = "menu";
-      this.buildActions();
-      this.render();
-    });
-  }
-
-  /** The antagonist argues before he fights; ward turns should not be wasted on it. */
-  private pickAction(): EncounterAction {
-    const action = this.encounter.actions;
-    const total = action.reduce((sum, a) => sum + a.weight, 0);
-    let roll = Math.random() * total;
-    for (const candidate of action) {
-      roll -= candidate.weight;
-      if (roll <= 0) return candidate;
+    if (this.sim.now < this.yieldArmed) {
+      this.end(false, "You lower your wand.", true);
+      return;
     }
-    return action[0]!;
+    this.yieldArmed = this.sim.now + 2;
+    this.inHud(() => this.hud.caption("", "Press ESC again to yield.", 2));
   }
 
-  // --- theatre -----------------------------------------------------------
+  // --- the loop -------------------------------------------------------------------
 
-  /** Steps in, strikes, steps back. `onHit` fires at the moment of contact. */
-  private lunge(
-    sprite: Phaser.GameObjects.Sprite,
-    home: { x: number; y: number },
-    dir: 1 | -1,
-    strikeAnim: string,
-    idleAnim: string,
-    onHit: () => void,
-  ): void {
-    sprite.anims.play(strikeAnim);
-    this.tweens.add({
-      targets: sprite,
-      x: home.x + dir * 70,
-      duration: 140,
-      ease: "Quad.easeOut",
-      onComplete: () => {
-        onHit();
-        this.tweens.add({
-          targets: sprite,
-          x: home.x,
-          duration: 260,
-          ease: "Quad.easeInOut",
-          onComplete: () => sprite.anims.play(idleAnim),
-        });
-      },
-    });
+  update(_time: number, delta: number): void {
+    const dt = Math.min(delta, 50) / 1000;
+    this.phaseT += dt;
+    const { player, enemy } = this.sim;
+
+    if (this.phase === "intro") {
+      this.pressed.clear();
+      if (this.phaseT >= INTRO_SECONDS) {
+        this.phase = "fight";
+        this.phaseT = 0;
+      }
+    } else if (this.phase === "fight") {
+      this.readPlayer();
+      this.ai.update(dt);
+    }
+
+    if (this.slowmo > 0) {
+      this.slowmo -= dt;
+      this.sim.timeScale = this.slowmo > 0 ? 0.22 : 1;
+    }
+    this.sim.update(dt);
+
+    // Keep the world's numbers in step, so the HUD outside agrees with in here -
+    // until the duel is settled, when end() has the last word on them.
+    const state = this.world.state;
+    if (!this.finished) {
+      state.player.health = Math.max(0, Math.round(player.hp));
+      state.player.mana = Math.round(player.mana);
+    }
+
+    this.cam.frame(player.x, player.z, enemy.x, enemy.z, dt);
+    this.cam.punch += ((this.phase === "outro" ? 1.18 : 1) - this.cam.punch) * Math.min(1, dt * 3);
+    this.cam.commit(dt);
+
+    this.arena.update(this.cam, dt);
+    const t = this.time.now / 1000;
+    // Each view needs the other's screen position to decide which way to face.
+    const pScreen = this.cam.project(player.x, 0, player.z, this.proj).x;
+    const eScreen = this.cam.project(enemy.x, 0, enemy.z, this.proj).x;
+    this.pView.update(player, eScreen, this.cam, dt, t);
+    this.eView.update(enemy, pScreen, this.cam, dt, t);
+
+    this.fx.clear();
+    this.drawBolts();
+    this.drawLock(t);
+
+    const spell = SPELLS[state.player.selectedSpell];
+    const cooling = spell ? (this.spellCooldowns.get(spell.id) ?? 0) > this.sim.now : false;
+    const spellLine = spell ? `${spell.name} · ${spell.manaCost} mana${cooling ? " · recharging" : ""}` : "No spell attuned";
+    this.hud.update(player, enemy, dt, spellLine);
+    this.hud.setLock(this.sim.lock ? this.sim.lock.balance : null);
   }
 
-  /** A bolt of the spell's colour from the wand to the target, with a trail. */
-  private castBolt(color: number, onHit: () => void): void {
-    this.playerSprite.anims.play(castKey(this.playerLook, "right"));
-    const sx = this.playerSprite.x + this.playerSprite.displayWidth * 0.3;
-    const sy = this.playerSprite.y - this.playerSprite.displayHeight * 0.62;
-    const tx = this.enemySprite.x;
-    const ty = this.enemySprite.y - this.enemySprite.displayHeight * 0.5;
-    const bolt = this.add.image(sx, sy, "fx_glow_cool").setBlendMode(Phaser.BlendModes.ADD).setScale(0.32).setTint(color).setDepth(5);
-    const core = this.add.image(sx, sy, "fx_glow").setBlendMode(Phaser.BlendModes.ADD).setScale(0.12).setDepth(6);
-    let last = 0;
-    this.tweens.add({
-      targets: [bolt, core],
-      x: tx,
-      y: ty,
-      duration: 330,
-      ease: "Sine.easeIn",
-      onUpdate: () => {
-        if (this.time.now - last < 22) return;
-        last = this.time.now;
-        const mote = this.add.image(bolt.x, bolt.y, "fx_glow_cool").setBlendMode(Phaser.BlendModes.ADD).setScale(0.16).setTint(color).setDepth(4);
-        this.tweens.add({ targets: mote, alpha: 0, scale: 0.02, duration: 300, onComplete: () => mote.destroy() });
+  // --- sim events → theatre ----------------------------------------------------------
+
+  private duelEvents(): DuelEvents {
+    const audio = this.world.audio;
+    const viewOf = (f: Fighter) => (f === this.sim.player ? this.pView : this.eView);
+    return {
+      hit: (target, damage, kind, heavy) => {
+        const v = viewOf(target);
+        v.flash();
+        this.burst(v.screenX, v.screenY - 26 * v.screenScale, heavy ? 0xffd07a : 0xffffff, heavy ? 1.4 : 1);
+        this.cam.shake(heavy ? 9 : 5, heavy ? 0.3 : 0.18);
+        if (kind === "bolt" || kind === "nova" || kind === "lock") audio.playHit();
+        audio.playAttack(heavy, true);
+        if (target === this.sim.player) audio.playHurt();
+        this.popAt(v, `${damage}`, target === this.sim.player ? "#ff8a7a" : heavy ? "#ffd166" : "#ffffff", heavy ? 34 : 28);
       },
-      onComplete: () => {
-        bolt.destroy();
-        core.destroy();
-        const burst = this.add.image(tx, ty, "fx_glow_cool").setBlendMode(Phaser.BlendModes.ADD).setScale(0.3).setTint(color).setDepth(6);
-        this.tweens.add({ targets: burst, scale: 1.6, alpha: 0, duration: 380, onComplete: () => burst.destroy() });
-        onHit();
-        this.playerSprite.anims.play(idleKey(this.playerLook, "right"));
+      blocked: (target, broke, magic) => {
+        const v = viewOf(target);
+        this.sparks(v.tip.x, v.tip.y, magic ? 0xbfe0ff : 0xffe6a0, 10);
+        audio.playHit();
+        if (broke) {
+          this.popAt(v, "Guard broken!", "#ff9a6a", 24);
+          this.cam.shake(8, 0.25);
+        } else this.popAt(v, magic ? "Warded" : "Blocked", "#e8e0c0", 20);
       },
-    });
+      parried: (target, attacker, magic) => {
+        const v = viewOf(target);
+        this.sparks(v.tip.x, v.tip.y, 0xfff4c8, 22);
+        this.arena.ringFlash = 1;
+        audio.playSfx("secret");
+        audio.playAttack(true, true);
+        this.cam.shake(6, 0.2);
+        this.popAt(v, magic ? "Deflected!" : "Parry!", "#fff2a8", 32);
+        if (target === this.sim.player && !magic) this.popAt(viewOf(attacker), "Open!", "#ffd166", 20);
+      },
+      evaded: (target, perfect) => {
+        if (perfect) {
+          this.popAt(viewOf(target), "Evaded!", "#bfe8ff", 24);
+          target.stamina = Math.min(target.maxStamina, target.stamina + 20);
+        }
+        audio.playAttack(false, false);
+      },
+      missed: () => audio.playAttack(false, false),
+      wardAbsorbed: (target) => {
+        const v = viewOf(target);
+        this.sparks(v.screenX, v.screenY - 26 * v.screenScale, 0xe8c86a, 14);
+        audio.playSpell("ward");
+        this.popAt(v, "Absorbed", "#ffe08a", 20);
+      },
+      swing: (f) => audio.playAttack(f.attack?.kind !== "light", false),
+      windup: (f) => {
+        if (f === this.sim.enemy && f.attack?.kind === "special") audio.playSfx("stone_grind");
+      },
+      castStart: (f) => {
+        const v = viewOf(f);
+        this.sparks(v.tip.x, v.tip.y, f.cast?.color ?? 0xffffff, 4);
+      },
+      boltFired: (b) => {
+        audio.playSpell("projectile");
+        this.boltViews.set(b, this.makeBoltView(b));
+      },
+      boltGone: (b, x, y, z) => {
+        const view = this.boltViews.get(b);
+        if (view) {
+          view.glow.destroy();
+          view.core.destroy();
+          this.boltViews.delete(b);
+        }
+        const p = this.cam.project(x, y, z, this.proj);
+        if (p.visible) this.burst(p.x, p.y, b.spec.color, 0.9);
+      },
+      nova: (f) => {
+        audio.playSpell("nova");
+        this.ringBurst(f, f.cast?.color ?? 0xff8a3a);
+        this.cam.shake(7, 0.25);
+      },
+      wardRaised: () => audio.playSpell("ward"),
+      blink: (_f, fromX, fromZ) => {
+        audio.playSpell("blink");
+        const p = this.cam.project(fromX, 40, fromZ, this.proj);
+        if (p.visible) this.burst(p.x, p.y - 30 * p.s, 0xbfa8ff, 1.2);
+      },
+      dodged: () => audio.playDash(),
+      quaffed: (f, healed) => {
+        audio.playPickup();
+        if (healed > 0) this.popAt(viewOf(f), `+${healed}`, "#8af0a0", 26);
+      },
+      lockStart: () => {
+        audio.playSfx("portal");
+        this.arena.ringFlash = 1;
+        this.cam.shake(4, 0.4);
+      },
+      lockEnd: (_lock, winner) => {
+        audio.playSfx(winner ? "collapse" : "rumble");
+        this.arena.ringFlash = 1;
+        this.cam.shake(12, 0.45);
+        if (!winner) return;
+        const won = winner === this.sim.player;
+        this.inHud(() => this.hud.banner(won ? "You win the lock!" : "Overpowered!", won ? "#bfe0ff" : "#ff9a8a", "#3060c0", 40));
+      },
+      taunt: (f, text) => this.inHud(() => this.hud.caption(f.name, text, 3)),
+      knockedOut: (f) => this.onKnockout(f),
+      bark: (f, text) => this.inHud(() => this.hud.caption(f === this.sim.player ? "" : f.name, text, 3.4)),
+    };
   }
 
-  private hitEnemy(damage: number, color = 0xffffff): void {
-    const sprite = this.enemySprite;
-    sprite.setTint(0xff9a9a);
-    this.time.delayedCall(140, () => sprite.clearTint());
-    this.tweens.add({ targets: sprite, x: this.enemyHome.x + 14, duration: 60, yoyo: true, ease: "Quad.easeOut" });
+  private onKnockout(f: Fighter): void {
+    if (this.phase === "outro") return;
+    this.phase = "outro";
+    this.phaseT = 0;
+    this.sim.over = true;
+    this.slowmo = 0.9;
+    this.cam.shake(14, 0.5);
+    const victory = f === this.sim.enemy;
+    const enc = this.encounter;
+    if (victory) {
+      if (enc.friendly) {
+        const line = enc.yieldLine ?? `${enc.name} lowers their wand. "Enough. You win."`;
+        this.time.delayedCall(700, () => this.inHud(() => this.hud.caption(enc.name, line, 3)));
+      }
+      this.time.delayedCall(450, () => this.inHud(() => this.hud.banner(enc.friendly ? "They yield" : "Victory")));
+      this.time.delayedCall(2600, () => this.end(true, enc.victoryText, false));
+    } else {
+      this.time.delayedCall(450, () => this.inHud(() => this.hud.banner("Defeated", "#c8bca0", "#000000")));
+      this.time.delayedCall(2400, () => this.end(false, enc.defeatText, false));
+    }
+  }
+
+  // --- spells on screen ---------------------------------------------------------------
+
+  private makeBoltView(b: Bolt): BoltView {
+    const glow = this.add.image(0, 0, "fx_glow_cool").setBlendMode(Phaser.BlendModes.ADD).setTint(b.spec.color);
+    const core = this.add.image(0, 0, "fx_glow").setBlendMode(Phaser.BlendModes.ADD);
+    return { glow, core, last: 0 };
+  }
+
+  private drawBolts(): void {
+    for (const [b, v] of this.boltViews) {
+      const p = this.cam.project(b.x, b.y, b.z, this.proj);
+      if (!p.visible) continue;
+      const big = b.spec.radius / 18;
+      v.glow.setPosition(p.x, p.y).setScale(p.s * 0.55 * big).setDepth(-p.depth + 5);
+      v.core.setPosition(p.x, p.y).setScale(p.s * 0.22 * big).setDepth(-p.depth + 6);
+      if (this.time.now - v.last > 24) {
+        v.last = this.time.now;
+        const mote = this.add
+          .image(p.x, p.y, "fx_glow_cool")
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(p.s * 0.28 * big)
+          .setTint(b.spec.color)
+          .setDepth(-p.depth + 4);
+        this.tweens.add({ targets: mote, alpha: 0, scale: 0.02, duration: 320, onComplete: () => mote.destroy() });
+      }
+    }
+  }
+
+  private drawLock(t: number): void {
+    const lock = this.sim.lock;
+    if (!lock) return;
+    const g = this.fx;
+    const a = this.pView.tip;
+    const b = this.eView.tip;
+    const k = 0.5 + Math.max(-1, Math.min(1, lock.balance)) * 0.42;
+    const mx = a.x + (b.x - a.x) * k;
+    const my = a.y + (b.y - a.y) * k + Math.sin(t * 30) * 2;
+    const beam = (x0: number, y0: number, color: number) => {
+      for (const [w, alpha] of [
+        [14, 0.18],
+        [7, 0.45],
+        [2.5, 1],
+      ] as const) {
+        g.lineStyle(w + Math.sin(t * 40 + w) * 1.5, color, alpha);
+        g.beginPath();
+        g.moveTo(x0, y0);
+        // A shiver in the middle of each beam.
+        g.lineTo((x0 + mx) / 2 + Math.sin(t * 50 + x0) * 4, (y0 + my) / 2 + Math.cos(t * 47 + y0) * 4);
+        g.lineTo(mx, my);
+        g.strokePath();
+      }
+    };
+    beam(a.x, a.y, lock.player.spec.color);
+    beam(b.x, b.y, lock.enemy.spec.color);
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(mx, my, 10 + Math.sin(t * 22) * 3);
+    g.fillStyle(0xfff0c0, 0.35);
+    g.fillCircle(mx, my, 26 + Math.sin(t * 13) * 5);
+    if (Math.random() < 0.5) this.sparks(mx, my, Math.random() < 0.5 ? lock.player.spec.color : lock.enemy.spec.color, 1);
+  }
+
+  // --- effects --------------------------------------------------------------------------
+
+  private burst(x: number, y: number, color: number, size: number): void {
+    const flash = this.add.image(x, y, "fx_glow").setBlendMode(Phaser.BlendModes.ADD).setTint(color).setScale(0.25 * size).setDepth(60000);
+    this.tweens.add({ targets: flash, scale: 1.3 * size, alpha: 0, duration: 260, onComplete: () => flash.destroy() });
     const slash = this.add
-      .image(sprite.x, sprite.y - sprite.displayHeight * 0.5, "fx_slash")
+      .image(x, y, "fx_slash")
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setScale(1.6)
+      .setScale(1.2 * size)
       .setTint(color)
-      .setRotation(Math.PI)
-      .setDepth(6);
-    this.tweens.add({ targets: slash, alpha: 0, scale: 2.2, duration: 260, onComplete: () => slash.destroy() });
-    this.cameras.main.shake(90, 0.003);
-    this.popNumber(sprite.x, sprite.y - sprite.displayHeight * 0.85, `${damage}`, "#ffffff");
+      .setRotation(Math.random() * Math.PI)
+      .setDepth(60001);
+    this.tweens.add({ targets: slash, alpha: 0, scale: 2 * size, duration: 240, onComplete: () => slash.destroy() });
+    this.sparks(x, y, color, 7);
   }
 
-  private popNumber(x: number, y: number, text: string, color: string): void {
-    const t = this.add
-      .text(x, y, text, displayText({ size: 34, color }))
-      .setOrigin(0.5)
-      .setResolution(TEXT_RES)
-      .setDepth(30)
-      .setScale(0.6);
-    t.setStroke("#140808", 6);
-    this.tweens.add({ targets: t, scale: 1, y: y - 18, duration: 160, ease: "Back.easeOut" });
-    this.tweens.add({ targets: t, alpha: 0, y: y - 60, duration: 700, delay: 420, onComplete: () => t.destroy() });
-  }
-
-  private flashWard(): void {
-    const g = this.add.graphics().setDepth(7);
-    const x = this.playerSprite.x;
-    const y = this.playerSprite.y - this.playerSprite.displayHeight * 0.5;
-    g.lineStyle(4, WARD, 1);
-    g.strokeEllipse(x, y, this.playerSprite.displayWidth * 1.2, this.playerSprite.displayHeight * 1.1);
-    this.tweens.add({ targets: g, alpha: 0, duration: 400, onComplete: () => g.destroy() });
-  }
-
-  private drawWard(time: number): void {
-    const g = this.wardBubble;
-    g.clear();
-    if (this.wardTurns <= 0) return;
-    const x = this.playerSprite.x;
-    const y = this.playerSprite.y - this.playerSprite.displayHeight * 0.48;
-    const w = this.playerSprite.displayWidth * 1.15;
-    const h = this.playerSprite.displayHeight * 1.05;
-    const pulse = 0.5 + Math.sin(time / 200) * 0.2;
-    g.fillStyle(WARD, 0.08 + pulse * 0.05);
-    g.fillEllipse(x, y, w, h);
-    g.lineStyle(2, WARD, pulse);
-    g.strokeEllipse(x, y, w, h);
-    g.lineStyle(1, 0xfff4c8, pulse * 0.7);
-    g.strokeEllipse(x, y, w * 0.92, h * 0.94);
-  }
-
-  private pushLog(line: string): void {
-    this.log.push(line);
-    if (this.log.length > 4) this.log.shift();
-  }
-
-  // --- presentation ------------------------------------------------------
-
-  private drawBars(): void {
-    const { player } = this.world.state;
-    const W = viewWidth(this);
-    const plateY = 22;
-    const g = this.bars;
-    g.clear();
-    const px = 24 + 14 + PORTRAIT + 14;
-    const barW = PLATE_W - (px - 24) - 20;
-    capsuleBar(g, px, plateY + 46, barW, 15, player.health / player.maxHealth, HEALTH, HEALTH_DARK, this.playerGhost);
-    capsuleBar(g, px, plateY + 68, barW * 0.82, 10, player.mana / player.maxMana, MANA, MANA_DARK);
-    this.playerStats.setPosition(px + barW - 8, plateY + 53.5).setText(`${Math.ceil(player.health)} / ${player.maxHealth}`);
-
-    const ex = W - 24 - PLATE_W + 20;
-    const ef = Math.max(0, this.enemyHealth / this.encounter.health);
-    const enemyColor = this.encounter.boss ? 0x3fae7a : 0x8e44ad;
-    capsuleBar(g, ex, plateY + 46, barW, 15, ef, enemyColor, 0x1a1028, this.enemyGhost);
-    this.enemyStats.setPosition(ex + 8, plateY + 53.5).setText(`${Math.max(0, Math.ceil(this.enemyHealth))} / ${this.encounter.health}`);
-
-    if (this.wardTurns > 0) {
-      g.lineStyle(2, WARD, 0.9);
-      g.strokeCircle(24 + 14 + PORTRAIT / 2, plateY + PLATE_H / 2, PORTRAIT / 2 + 4);
+  private sparks(x: number, y: number, color: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 20 + Math.random() * 60;
+      const s = this.add
+        .image(x, y, "fx_spark")
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(color)
+        .setScale(0.5 + Math.random() * 0.5)
+        .setDepth(60002);
+      this.tweens.add({
+        targets: s,
+        x: x + Math.cos(a) * d,
+        y: y + Math.sin(a) * d * 0.7 + 10,
+        alpha: 0,
+        duration: 260 + Math.random() * 220,
+        ease: "Quad.easeOut",
+        onComplete: () => s.destroy(),
+      });
     }
   }
 
-  private render(): void {
-    const W = viewWidth(this);
-    const H = viewHeight(this);
+  /** A nova: a ring racing out across the floor from the caster's feet. */
+  private ringBurst(f: Fighter, color: number): void {
+    const state = { r: 20 };
+    const g = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD).setDepth(55000);
+    const pts: Phaser.Math.Vector2[] = [];
+    for (let i = 0; i < 40; i++) pts.push(new Phaser.Math.Vector2());
+    this.tweens.add({
+      targets: state,
+      r: 260,
+      duration: 380,
+      ease: "Cubic.easeOut",
+      onUpdate: () => {
+        g.clear();
+        let n = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const a = (i / pts.length) * Math.PI * 2;
+          const p = this.cam.project(f.x + Math.cos(a) * state.r, 6, f.z + Math.sin(a) * state.r, this.proj);
+          if (p.visible) pts[n++]!.set(p.x, p.y);
+        }
+        const alpha = 1 - state.r / 280;
+        g.lineStyle(6, color, alpha);
+        g.strokePoints(pts.slice(0, n), true);
+        g.lineStyle(2, 0xffffff, alpha);
+        g.strokePoints(pts.slice(0, n), true);
+      },
+      onComplete: () => g.destroy(),
+    });
+  }
 
-    this.titleText.setText(this.encounter.boss ? "The Final Duel" : "A Duel");
+  private popAt(v: FighterView, text: string, color: string, size: number): void {
+    const x = v.screenX + (Math.random() - 0.5) * 30;
+    const y = v.screenY - 52 * v.screenScale;
+    this.inHud(() => this.hud.pop(x, y, text, color, size));
+  }
 
-    // Parchment log, bottom left; the newest line darkest.
-    const logW = Math.min(560, W * 0.44);
-    const logH = 142;
-    const logX = 24;
-    const logY = H - logH - 20;
-    this.logFrame.draw(logX, logY, logW, logH);
-    this.logText
-      .setPosition(logX + 28, logY + 22)
-      .setWordWrapWidth(logW - 56)
-      .setText(this.log.join("\n"))
-      .setColor(this.log.length > 0 ? COLOR_INK : COLOR_INK_SOFT);
+  // --- where and how --------------------------------------------------------------------
 
-    // The menu, bottom right, laid out from its last row upward.
-    const visible = this.phase === "menu" ? this.actions : [];
-    const rowH = 32;
-    const menuW = Math.min(420, W - logW - 72);
-    const rows = Math.max(1, this.actions.length);
-    const menuH = 56 + rows * rowH;
-    const menuX = W - menuW - 24;
-    const menuY = H - menuH - 20;
-    this.menuFrame.draw(menuX, menuY, menuW, menuH);
-    this.menuTitle
-      .setPosition(menuX + 22, menuY + 16)
-      .setText(this.phase === "menu" ? "Your move" : this.phase === "busy" ? `${this.encounter.name} moves…` : "")
-      .setColor(this.phase === "menu" ? COLOR_GOLD : COLOR_DIM);
-
-    // Number badges are part of the bar graphics; redraw them here.
-    const badges = this.badgeLayer();
-    badges.clear();
-    for (let i = 0; i < this.menuTexts.length; i++) {
-      const text = this.menuTexts[i]!;
-      const key = this.menuKeys[i]!;
-      const action = this.actions[i];
-      if (!action) {
-        text.setVisible(false);
-        key.setVisible(false);
-        continue;
-      }
-      const y = menuY + 54 + i * rowH;
-      const live = visible.includes(action);
-      keyBadge(badges, menuX + 32, y, 10, live);
-      key.setVisible(true).setText(`${i + 1}`).setPosition(menuX + 32, y);
-      text
-        .setVisible(true)
-        .setPosition(menuX + 52, y)
-        .setText(action.label)
-        .setAlpha(live ? 1 : 0.4);
+  /** Picks the arena from where the duel was called, when the encounter doesn't say. */
+  private arenaFromWorld(): DuelArena {
+    const w = this.world;
+    const level = w.mechanisms?.currentLevelId ?? null;
+    if (level === "academy_interior") return "hall";
+    const biome = w.world.biomeNameAtPixel(w.player.x, w.player.y);
+    if (biome === "crypt") return "crypt";
+    if (biome === "scar") {
+      const well = landmarkById("wellhead");
+      if (well && Math.hypot((well.tx + 2) * TILE - w.player.x, (well.ty + 2) * TILE - w.player.y) < 600) return "well";
+      return "scar";
     }
+    if (biome === "forest" || biome === "marsh") return "forest";
+    return "courtyard";
   }
 
-  private badges: Phaser.GameObjects.Graphics | null = null;
+  // --- settling up -------------------------------------------------------------------------
 
-  private badgeLayer(): Phaser.GameObjects.Graphics {
-    if (!this.badges || !this.badges.scene) this.badges = this.add.graphics().setDepth(21);
-    return this.badges;
-  }
-
-  private finish(victory: boolean, message: string): void {
-    this.phase = "over";
-    this.pushLog(message);
-    this.render();
+  private end(victory: boolean, message: string, yielded: boolean): void {
+    if (this.finished) return;
+    this.finished = true;
+    const state = this.world.state;
 
     if (victory) {
       this.world.audio.playDefeat();
       this.grantVictory();
-      this.tweens.add({ targets: this.enemySprite, alpha: 0, y: this.enemySprite.y + 10, duration: 700, delay: 400 });
     } else {
       this.world.audio.playUi("error");
-      this.game.events.emit("korvana:toast", `Duel lost. ${message}`);
+      // Losing is a setback, not a dead end.
+      if (!yielded) state.player.health = Math.max(1, Math.round(state.player.maxHealth * 0.4));
+      this.game.events.emit("korvana:toast", yielded ? "You yield the duel." : `Duel lost. ${message}`);
     }
-    this.banner(victory ? "Victory" : "Yielded", victory);
+    state.player.health = Math.max(1, state.player.health);
 
-    const result: DuelResult = {
-      encounter: this.encounter.id,
-      challenger: this.challenger,
-      victory,
-      yielded: !victory && this.world.state.player.health > 0 && message === "You lower your wand.",
-    };
-    this.time.delayedCall(victory ? 1800 : 1400, () => {
+    const result: DuelResult = { encounter: this.encounter.id, challenger: this.challenger, victory, yielded };
+    this.cameras.main.fadeOut(320, 5, 6, 10);
+    this.hudCam.fadeOut(320, 5, 6, 10);
+    this.time.delayedCall(340, () => {
       this.scene.resume("world");
       this.scene.stop();
       if (!victory) this.world.gameEvents.emit({ kind: "battle_lost", id: result.encounter });
       this.game.events.emit(DUEL_ENDED, result);
     });
-  }
-
-  private banner(text: string, victory: boolean): void {
-    const W = viewWidth(this);
-    const H = viewHeight(this);
-    const t = this.add
-      .text(W / 2, H * 0.36, text, displayText({ size: 64, color: victory ? "#f6dc8c" : "#c8bca0", padding: 12 }))
-      .setOrigin(0.5)
-      .setResolution(TEXT_RES)
-      .setDepth(40)
-      .setAlpha(0)
-      .setScale(0.85);
-    t.setShadow(0, 0, victory ? "#e09040" : "#000000", 22, false, true);
-    this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 420, ease: "Back.easeOut" });
   }
 
   private grantVictory(): void {
@@ -728,5 +752,69 @@ export class BattleScene extends Phaser.Scene {
     if (encounter.boss) events.emit({ kind: "boss_defeated", id: encounter.id });
 
     for (const line of lines) this.game.events.emit("korvana:toast", line);
+  }
+}
+
+// --- tables ---------------------------------------------------------------------------------
+
+function defaultStyle(look: string): DuelStyle {
+  if (["shade", "husk", "wraith", "spider", "bat", "owl"].includes(look)) return "beast";
+  if (["adept", "vale", "headmistress", "professor", "librarian", "keeper", "ghost", "lamp"].includes(look)) return "magic";
+  if (["guardian", "skeleton"].includes(look)) return "sword";
+  return "mixed";
+}
+
+function weaponKind(kind: string): WeaponKind {
+  if (kind === "greatsword" || kind === "dagger" || kind === "wand") return kind;
+  return "sword";
+}
+
+function enemyWeapon(look: string, style: DuelStyle): WeaponKind {
+  if (style === "beast") return "none";
+  if (style === "magic") return "wand";
+  if (look === "guardian") return "greatsword";
+  if (look === "raider") return "dagger";
+  return "sword";
+}
+
+function enemyBlade(look: string): number {
+  if (look === "shade" || look === "wraith") return 0x9fb4ff;
+  if (look === "guardian" || look === "skeleton") return 0xc8d0d8;
+  return 0xe6ecf2;
+}
+
+/** The colour of an opponent's magic. */
+function boltColor(enc: EncounterDef): number {
+  if (enc.look === "vale") return 0xa8f0c8;
+  if (enc.look === "raider") return 0xffb060;
+  if (enc.look === "adept") return 0xc77dff;
+  const palette = [0xff8a6a, 0x8fd4ff, 0xb48cff, 0x8af0a0, 0xffd166];
+  let h = 0;
+  for (const ch of enc.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return palette[h % palette.length]!;
+}
+
+/** The player's spells, reshaped for the duel: same identity, duel-sized numbers. */
+function castSpecFor(id: string): CastSpec | null {
+  const spell = SPELLS[id];
+  if (!spell) return null;
+  switch (spell.kind) {
+    case "projectile":
+      return {
+        kind: "bolt",
+        windup: 0.16,
+        damage: Math.round(spell.damage * 1.5),
+        color: spell.color,
+        speed: Math.max(520, spell.speed ?? 600),
+        radius: Math.max(14, Math.min(26, spell.radius ?? 16)),
+        mana: spell.manaCost,
+        spellId: id,
+      };
+    case "nova":
+      return { kind: "nova", windup: 0.24, damage: Math.round(spell.damage * 1.4), color: spell.color, speed: 0, radius: 230, mana: spell.manaCost, spellId: id };
+    case "ward":
+      return { kind: "ward", windup: 0.12, damage: 0, color: spell.color, speed: 0, radius: 0, mana: spell.manaCost, duration: 3.5, spellId: id };
+    case "blink":
+      return { kind: "blink", windup: 0.06, damage: 0, color: spell.color, speed: 0, radius: 0, mana: spell.manaCost, spellId: id };
   }
 }
