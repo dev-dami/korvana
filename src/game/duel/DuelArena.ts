@@ -54,6 +54,9 @@ const PANO_W = 1024;
 const PANO_H = 360;
 const TILE = 96;
 const FLOOR_RADIUS = 1150;
+/** Props nearer the camera than this start to fade, gone entirely at the start. */
+const NEAR_FADE_START = 520;
+const NEAR_FADE_SPAN = 260;
 
 const THEMES: Record<DuelArena, Theme> = {
   hall: {
@@ -210,6 +213,10 @@ export class DuelArenaView {
       .setScale(this.panoScale)
       .setDepth(-100000);
 
+    // Ground beyond the floor's edge, below where the panorama ends, so a
+    // camera swung wide never sees void.
+    const ground = mixColor(this.theme.floorB, this.theme.fog, 0.45);
+    scene.add.rectangle(0, panoH - 2, w, h - panoH + 40, ground).setOrigin(0, 0).setDepth(-99000);
     this.floor = scene.add.graphics().setDepth(-90000);
     this.ringG = scene.add.graphics().setDepth(-89000).setBlendMode(Phaser.BlendModes.ADD);
     for (let i = 0; i < 72; i++) this.ringPts.push(new Phaser.Math.Vector2());
@@ -365,6 +372,15 @@ export class DuelArenaView {
         b.glow?.setVisible(false);
         continue;
       }
+      // The camera can swing inside the ring of props; anything that close to
+      // the lens would fill the screen as one giant pixel, so it fades away,
+      // the way a fighting-game camera clears foreground clutter.
+      const near = Math.min(1, Math.max(0, (this.p.depth - NEAR_FADE_START) / NEAR_FADE_SPAN));
+      if (near <= 0) {
+        b.img.setVisible(false);
+        b.glow?.setVisible(false);
+        continue;
+      }
       const s = this.p.s * b.scale;
       const fog = Math.min(0.75, Math.max(0, (this.p.depth - 900) / 2600));
       b.img
@@ -372,11 +388,12 @@ export class DuelArenaView {
         .setPosition(this.p.x, this.p.y)
         .setScale(s)
         .setDepth(-this.p.depth)
-        .setAlpha(1 - fog * 0.5);
+        .setAlpha((1 - fog * 0.5) * near);
       if (b.glow) {
         const flicker = 0.85 + Math.sin(this.time * 9 + b.phase) * 0.08 + Math.sin(this.time * 23 + b.phase) * 0.05;
         b.glow
           .setVisible(true)
+          .setAlpha(0.8 * near)
           .setPosition(this.p.x, this.p.y - b.glowAt * s)
           .setScale(this.p.s * 1.6 * flicker)
           .setDepth(-this.p.depth + 1);
@@ -392,14 +409,14 @@ export class DuelArenaView {
       if (mote.y > 420) mote.y = 10;
       if (mote.y < 0) mote.y = 410;
       cam.project(mote.x, mote.y, mote.z, this.p);
-      if (!this.p.visible) {
+      if (!this.p.visible || this.p.depth < NEAR_FADE_START) {
         mote.img.setVisible(false);
         continue;
       }
       mote.img
         .setVisible(true)
         .setPosition(this.p.x, this.p.y)
-        .setScale(Math.max(0.35, this.p.s * 1.4))
+        .setScale(Math.min(2.5, Math.max(0.35, this.p.s * 1.4)))
         .setDepth(-this.p.depth + 2)
         .setAlpha(0.35 + 0.4 * Math.abs(Math.sin(this.time + mote.drift)));
     }

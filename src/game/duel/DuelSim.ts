@@ -547,8 +547,19 @@ export class DuelSim {
       if (Math.abs(f.knock) < 4) f.knock = 0;
     }
 
+    const o = this.foe(f);
+    const before = Math.hypot(o.x - f.x, o.z - f.z);
     f.x += mx * dt;
     f.z += mz * dt;
+    // Pure sidestepping circles the opponent at a steady distance instead of
+    // spiralling out along the tangent - that is what swings the camera round.
+    if (adv === 0 && str !== 0 && f.act === "idle") {
+      const dx = f.x - o.x;
+      const dz = f.z - o.z;
+      const now = Math.hypot(dx, dz) || 1;
+      f.x = o.x + (dx / now) * before;
+      f.z = o.z + (dz / now) * before;
+    }
 
     const r = Math.hypot(f.x, f.z);
     if (r > ARENA_RADIUS) {

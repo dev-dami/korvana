@@ -12,6 +12,7 @@ bun install
 bun run dev        # http://localhost:5173
 bun run build      # type-check and production build into dist/
 bun scripts/check-story.ts   # static story checks + headless playthrough of every ending
+bun scripts/check-duel.ts    # duel rule scenarios + AI bouts for every encounter
 ```
 
 ## The game
@@ -44,6 +45,30 @@ bun scripts/check-story.ts   # static story checks + headless playthrough of eve
 | F8 / F9 | save / load | N | sound on/off |
 | P / ESC | pause | ` | debug overlay |
 
+## Duels
+
+Duels are fought face to face in real time, in a pseudo-3D arena. The camera
+swings with the line between you and your opponent, so circling them turns the
+world around you.
+
+- **Story duels** (Seren, Vale, the sparring ring) start where the story calls for them.
+- **Civilians react to how you hit them.** Strike someone with a weapon and they
+  run off. Hex them with magic and they call you out: wands out, a friendly duel
+  to the yield. Win or lose, they remember it.
+
+| Key | In a duel |
+|-----|-----------|
+| A / D | advance / retreat |
+| W / S | circle round your opponent |
+| Z | slash (press again for a three-cut combo) |
+| X | heavy blow (breaks a tired guard) |
+| SHIFT (or F) | guard; raise it just as a blow or bolt lands to **parry** or **deflect** it |
+| C | dodge (brief invulnerability) |
+| SPACE | cast the attuned spell; mash it to win a **spell-lock** when two bolts meet |
+| 1-6 | choose a spell |
+| Q | drink a tonic |
+| ESC ×2 | yield (not every opponent allows it) |
+
 ## Code map
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the design bible and the ids that
@@ -54,4 +79,5 @@ connect the systems. In short:
 - `src/game/gfx/` holds the procedural art, lighting, particles and post-processing.
 - `src/game/audio/` holds the music engine, instruments, themes and sound effects.
 - `src/game/world/` holds the endless chunked world and landmark stamping.
+- `src/game/duel/` holds the real-time duel: rules (DuelSim), opponent AI, camera, arenas and fighters.
 - `src/game/scenes/` holds the title, world, UI and duel scenes.

@@ -203,3 +203,18 @@ NPCs use `home: { kind: "spot", id }`.
   audio only.
 - Performance budget: 60 fps on a mid-range laptop. Bake to textures, pool
   objects, avoid per-frame allocation in hot loops.
+
+---
+
+## 8. Duels and civilians
+
+Duels are real-time and one-on-one (`scenes/BattleScene.ts`, `duel/*`). An
+encounter in `data/encounters.ts` tunes one with `style` (sword / magic /
+mixed / beast), `skill` (0..1), `arena`, `friendly`, `openingLine` and
+`yieldLine`; its authored `actions` become the opponent's specials and taunts.
+The duel reports its outcome on `korvana:duel-ended` (`DuelResult`).
+
+Civilians (`systems/CivilianSystem.ts`, `data/civilians.ts`) react to being
+struck: a weapon makes them flee, magic makes them challenge the player to a
+friendly duel built on the spot (`challenge_<npcId>`). The Choosing Lamp,
+Brother Hollis, Pip, Vale and Keeper Ilse have their own exemptions.
