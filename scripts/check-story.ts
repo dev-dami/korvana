@@ -76,7 +76,8 @@ const EXTERNAL_SPOTS = [
 const PUZZLES = ["undercroft_floodgate", "barrow_roots", "reliquary_bells", "reliquary_escape"];
 const BIOMES = ["ocean", "shallows", "beach", "marsh", "meadow", "forest", "highland", "peak", "scar", "crypt"];
 /** Flags other systems set, which the story may read without setting. */
-const EXTERNAL_FLAG_PREFIXES = ["battle_reward_", "said_", "checkpoint_", "lamp_suggests_", "house_"];
+/** `duel_won_<npc>` / `duel_lost_<npc>` are set by systems/CivilianSystem.ts after a civilian challenge. */
+const EXTERNAL_FLAG_PREFIXES = ["battle_reward_", "said_", "checkpoint_", "lamp_suggests_", "house_", "duel_won_", "duel_lost_"];
 /** Shared flags (DESIGN.md §6) the story sets for other workstreams to read. */
 const SHARED_FLAGS = [
   "sorted",

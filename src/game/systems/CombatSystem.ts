@@ -98,29 +98,12 @@ export class CombatSystem {
 
     this.drawSlash(attacker, def, weapon, kind);
 
-    // Work out what the arc actually covers, in the direction being faced.
-    // Both ends of the measurement use the same body offset, so an actor level
-    // with the attacker is neither favoured nor penalised.
-    const facing = dirVector(attacker.direction);
-    const cosLimit = Math.cos(def.arc);
-    const originY = attacker.y - ACTOR_BODY_OFFSET;
-
     let hits = 0;
     let damage = 0;
     let crits = 0;
 
     for (const target of targets) {
-      if (!target.alive) continue;
-
-      const dx = target.x - attacker.x;
-      const dy = target.y - ACTOR_BODY_OFFSET - originY;
-      const distance = Math.hypot(dx, dy);
-      if (distance > def.reach + 16) continue;
-
-      if (distance > 0.001) {
-        const dot = (dx / distance) * facing.x + (dy / distance) * facing.y;
-        if (dot < cosLimit) continue;
-      }
+      if (!this.covers(attacker, def, target)) continue;
 
       const crit = Math.random() < CRIT_CHANCE;
       const variance = 0.88 + Math.random() * 0.24;
@@ -133,6 +116,31 @@ export class CombatSystem {
     }
 
     return { ok: true, kind, weapon, hits, damage, crits };
+  }
+
+  /**
+   * Which of `actors` the swing just thrown would have caught. Used for the
+   * people a blow lands on without hurting - see systems/CivilianSystem.ts.
+   */
+  caughtInArc(attacker: Actor, kind: SwingKind, weaponId: string, actors: readonly Actor[]): Actor[] {
+    const def = this.swingDef(kind, weaponId);
+    return actors.filter((actor) => this.covers(attacker, def, actor));
+  }
+
+  /**
+   * Whether a swing's arc covers a target, in the direction being faced. Both
+   * ends of the measurement use the same body offset, so an actor level with
+   * the attacker is neither favoured nor penalised.
+   */
+  private covers(attacker: Actor, def: SwingDef, target: Actor): boolean {
+    if (!target.alive || target === attacker) return false;
+    const facing = dirVector(attacker.direction);
+    const dx = target.x - attacker.x;
+    const dy = target.y - attacker.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance > def.reach + 16) return false;
+    if (distance <= 0.001) return true;
+    return (dx / distance) * facing.x + (dy / distance) * facing.y >= Math.cos(def.arc);
   }
 
   private swingDef(kind: SwingKind, weaponId: string): SwingDef {

@@ -40,7 +40,7 @@ export class InteractionSystem {
     let bestDistance = this.range;
 
     for (const npc of npcs) {
-      if (!npc.alive) continue;
+      if (!npc.alive || !npc.approachable) continue;
       const distance = npc.distanceTo(this.player);
       if (distance < bestDistance) {
         bestDistance = distance;

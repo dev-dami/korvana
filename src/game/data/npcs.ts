@@ -1,3 +1,5 @@
+import { AMBIENT_ROSTER } from "./civilians";
+
 /**
  * Where an NPC stands. Act I's cast lives around the player's arrival; anyone
  * the story meets later is pinned to the landmark or named spot they belong
@@ -7,8 +9,18 @@
 export type NpcHome =
   | { kind: "arrival"; dx: number; dy: number }
   | { kind: "landmark"; id: string; dx: number; dy: number }
-  /** A named spot from data/spots.ts, for precise placement inside a structure. */
-  | { kind: "spot"; id: string };
+  /**
+   * A named spot from data/spots.ts, for precise placement inside a structure.
+   * The optional tile offset lets a crowd share one spot without standing on
+   * each other's feet.
+   */
+  | { kind: "spot"; id: string; dx?: number; dy?: number };
+
+/**
+ * What someone is to the school, for anyone who is not in the story: the
+ * students and staff who make the Academy feel lived in.
+ */
+export type NpcRole = "civilian" | "student" | "staff";
 
 export interface NpcDef {
   id: string;
@@ -27,6 +39,8 @@ export interface NpcDef {
    * when she reappears on the Reliquary steps.
    */
   hiddenByFlag?: string | string[];
+  /** Set on the ambient cast (data/civilians.ts); story characters leave it out. */
+  role?: NpcRole;
 }
 
 /**
@@ -254,6 +268,9 @@ export const NPC_ROSTER: NpcDef[] = [
     requiresFlag: "ilse_done",
     hiddenByFlag: "ending_defeated",
   },
+
+  // --- Everyone else: the students and staff who are not in the story ---
+  ...AMBIENT_ROSTER,
 ];
 
 export function npcById(id: string): NpcDef | undefined {

@@ -18,6 +18,7 @@ import { NPC } from "../entities/NPC";
 import { Player } from "../entities/Player";
 import type { Actor } from "../entities/Actor";
 import { calloutText, floatText } from "../gfx/FloatingText";
+import { CivilianSystem } from "../systems/CivilianSystem";
 import { CombatSystem } from "../systems/CombatSystem";
 import { CutsceneSystem } from "../systems/CutsceneSystem";
 import { DialogueSystem } from "../systems/DialogueSystem";
@@ -81,6 +82,8 @@ export class WorldScene extends Phaser.Scene {
   mechanisms!: MechanismSystem;
   /** Lighting, weather, water and combat effects. See gfx/WorldFx.ts. */
   fx!: WorldFx;
+  /** How the school's people answer a blow (they run) or a hex (they duel). */
+  civilians!: CivilianSystem;
 
   private interaction!: InteractionSystem;
   private effectRunner!: EffectRunner;
@@ -193,6 +196,8 @@ export class WorldScene extends Phaser.Scene {
       toast: (message) => this.toast(message),
       npcTargeted: () => this.interaction.target !== null,
     });
+    this.civilians = new CivilianSystem(this);
+    this.spells.bystanders = this.civilians;
     this.bindInput();
 
     const camera = this.cameras.main;
@@ -324,6 +329,8 @@ export class WorldScene extends Phaser.Scene {
     } else if (pressed.has("spellbook")) {
       this.openSpellbook();
       this.player.holdStill();
+    } else if (this.civilians.holdingPlayer) {
+      this.player.holdStill();
     } else {
       this.player.speedScale = this.combat.busy ? MOVE_SPEED_WHILE_SWINGING : 1;
       this.player.update(this.world, dt);
@@ -331,6 +338,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     for (const npc of this.npcs) npc.update(this.world, dt, this.npcObstacles);
+    this.civilians.update(dt);
     this.updateEnemies(dt);
 
     this.spells.update(dt, this.enemies, (target, amount) => this.damageEnemy(target, amount));
@@ -431,8 +439,8 @@ export class WorldScene extends Phaser.Scene {
       const host = spot ? landmarkById(spot.landmark) : undefined;
       if (!spot || !host) return null;
       return {
-        x: (host.tx + spot.dx) * TILE + TILE / 2,
-        y: (host.ty + spot.dy) * TILE + TILE,
+        x: (host.tx + spot.dx + (def.home.dx ?? 0)) * TILE + TILE / 2,
+        y: (host.ty + spot.dy + (def.home.dy ?? 0)) * TILE + TILE,
       };
     }
     if (def.home.kind === "arrival") {
@@ -757,9 +765,11 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.mechanisms.onMelee();
+    // People in the arc are never hurt; they run (CivilianSystem).
+    const bystandersStruck = this.civilians.onMeleeArc(kind, weaponId);
     const heavy = kind === "heavy";
     this.player.strikePose("attack", heavy ? 300 : 200);
-    this.audio.playAttack(heavy, outcome.hits > 0);
+    this.audio.playAttack(heavy, outcome.hits + bystandersStruck > 0);
     calloutText(
       this,
       this.player.x,
@@ -769,7 +779,7 @@ export class WorldScene extends Phaser.Scene {
     );
     this.transition.shake(heavy ? 0.005 : 0.002, heavy ? 130 : 70);
 
-    if (outcome.hits === 0) {
+    if (outcome.hits === 0 && bystandersStruck === 0) {
       floatText(this, this.player.x, this.player.y - 26, "miss", {
         size: 13,
         color: "#9aa0aa",

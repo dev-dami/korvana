@@ -23,6 +23,18 @@ export interface ProjectileOptions {
   scale?: number;
   /** 0xRRGGBB tint for the bolt, its trail and the light it casts. */
   color?: number;
+  /** The spell this bolt carries, so whoever it touches knows what hit them. */
+  spell?: string;
+}
+
+/**
+ * Actors a spell can touch but must never harm - the Academy's students and
+ * staff. They are told about the hit and decide what it means to them.
+ */
+export interface Bystanders {
+  readonly actors: readonly Actor[];
+  /** Return false to let a bolt fly on through (a ghost); true stops it. */
+  onSpellHit(actor: Actor, spellId: string): boolean;
 }
 
 /** The scene's light registry, if it has one (WorldScene does; battles do not). */
@@ -45,6 +57,7 @@ export class Projectile {
   y: number;
   damage: number;
   radius: number;
+  readonly spellId: string;
   alive = true;
 
   private readonly scene: Phaser.Scene;
@@ -57,6 +70,8 @@ export class Projectile {
   private life: number;
   private age = 0;
   private trailTimer = 0;
+  /** Bystanders already passed through, so a ghost is only startled once per bolt. */
+  private passed: Set<Actor> | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -71,6 +86,7 @@ export class Projectile {
     this.damage = options.damage;
     this.life = options.life;
     this.radius = options.radius ?? DEFAULT_PROJECTILE_RADIUS;
+    this.spellId = options.spell ?? "";
     this.vx = Math.cos(angle) * options.speed;
     this.vy = Math.sin(angle) * options.speed;
     this.color = options.color ?? DEFAULT_COLOR;
@@ -108,7 +124,7 @@ export class Projectile {
    * Advances the bolt. Returns the actor it hit, or `null` if it is still
    * flying. Dead projectiles are destroyed by the caller.
    */
-  update(dt: number, world: WorldManager, targets: Actor[]): Actor | null {
+  update(dt: number, world: WorldManager, targets: Actor[], bystanders: Bystanders | null = null): Actor | null {
     if (!this.alive) return null;
 
     this.life -= dt;
@@ -143,6 +159,11 @@ export class Projectile {
           return target;
         }
       }
+
+      if (bystanders && this.touchBystander(bystanders)) {
+        this.explode(true);
+        return null;
+      }
     }
 
     const pulse = 1 + Math.sin(this.age * 30) * 0.12;
@@ -161,6 +182,17 @@ export class Projectile {
     }
 
     return null;
+  }
+
+  /** True when the bolt touched a bystander who stops it. They are never damaged. */
+  private touchBystander(bystanders: Bystanders): boolean {
+    for (const actor of bystanders.actors) {
+      if (!actor.alive || this.passed?.has(actor)) continue;
+      if (Math.hypot(actor.x - this.x, actor.y - ACTOR_BODY_OFFSET - this.y) > this.radius) continue;
+      if (bystanders.onSpellHit(actor, this.spellId)) return true;
+      (this.passed ??= new Set()).add(actor);
+    }
+    return false;
   }
 
   /** A spark left behind in the bolt's wake, drifting and fading. */
