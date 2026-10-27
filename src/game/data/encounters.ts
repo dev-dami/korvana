@@ -21,6 +21,19 @@ export interface EncounterAction {
   text: string;
 }
 
+/**
+ * How an opponent fights in the real-time duel.
+ *
+ *   sword  - closes the distance, strings blade combos, guards and parries
+ *   magic  - keeps range, casts bolts, raises wards, will lock spells with you
+ *   mixed  - both, switching with the distance
+ *   beast  - no weapon: lunges, claws and bites, cannot guard
+ */
+export type DuelStyle = "sword" | "magic" | "mixed" | "beast";
+
+/** The ground the duel is fought on. Chosen from where it happens when omitted. */
+export type DuelArena = "hall" | "courtyard" | "crypt" | "scar" | "well" | "forest";
+
 export interface EncounterDef {
   id: string;
   name: string;
@@ -44,11 +57,53 @@ export interface EncounterDef {
   rewardItem?: string;
   /** Journal entry unlocked on victory. */
   lore?: string;
+
+  // --- real-time duel tuning (all optional; sensible defaults per look) ---
+
+  style?: DuelStyle;
+  /** 0..1: reaction speed, parry odds, combo length, feints. Default 0.5. */
+  skill?: number;
+  arena?: DuelArena;
+  /**
+   * A duel to the yield, not to the fall: the loser kneels, nobody is hurt
+   * past a bruise, and losing costs nothing but pride. Civilian challenges.
+   */
+  friendly?: boolean;
+  /** Said as the duellists square up. */
+  openingLine?: string;
+  /** Said when they yield in a friendly duel. */
+  yieldLine?: string;
 }
+
+/**
+ * What the duel overlay is launched with. `challenger` is the npc id of a
+ * civilian who called the duel, so the world can settle up afterwards.
+ */
+export interface DuelLaunch {
+  encounter: string;
+  challenger?: string;
+}
+
+/**
+ * Emitted on `game.events` as `korvana:duel-ended` when a duel finishes, after
+ * the world has resumed.
+ */
+export interface DuelResult {
+  encounter: string;
+  challenger?: string;
+  victory: boolean;
+  /** True when the player walked away (Yield) rather than being beaten. */
+  yielded: boolean;
+}
+
+export const DUEL_ENDED = "korvana:duel-ended";
 
 export const ENCOUNTERS: Record<string, EncounterDef> = {
   sparring: {
     id: "sparring",
+    style: "sword",
+    skill: 0.25,
+    arena: "courtyard",
     name: "Alden's Practice Shade",
     look: "shade",
     health: 70,
@@ -64,6 +119,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
 
   husk_duel: {
     id: "husk_duel",
+    style: "beast",
+    skill: 0.35,
+    arena: "scar",
     name: "Cinder Husk",
     look: "husk",
     health: 90,
@@ -82,6 +140,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
   /** The Reliquary steps, if you raced her: she wants the Bell, and she fights like it. */
   seren_duel: {
     id: "seren_duel",
+    style: "mixed",
+    skill: 0.75,
+    arena: "forest",
     name: "Seren Ashdown",
     look: "raider",
     health: 150,
@@ -101,6 +162,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
   /** The Wellhead, if she is still your rival when it matters. */
   seren_wellhead: {
     id: "seren_wellhead",
+    style: "mixed",
+    skill: 0.8,
+    arena: "well",
     name: "Seren Ashdown",
     look: "raider",
     health: 175,
@@ -121,6 +185,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
   /** Phase one, if you never really listened. He has nothing to lose by you. */
   vale: {
     id: "vale",
+    style: "magic",
+    skill: 0.7,
+    arena: "well",
     name: "Vale",
     look: "vale",
     health: 200,
@@ -140,6 +207,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
   /** Phase one, if you listened. He fights as if every blow were an argument he is losing. */
   vale_torn: {
     id: "vale_torn",
+    style: "magic",
+    skill: 0.6,
+    arena: "well",
     name: "Vale",
     look: "vale",
     health: 170,
@@ -159,6 +229,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
   /** Phase two, alone: Vale calls up the Hollow Choir and wears it like a coat. */
   vale_choir: {
     id: "vale_choir",
+    style: "magic",
+    skill: 0.85,
+    arena: "well",
     name: "Vale and the Hollow Choir",
     look: "vale",
     health: 220,
@@ -180,6 +253,9 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
   /** Phase two, with Seren: she takes half the choir's attention and most of its temper. */
   vale_choir_aided: {
     id: "vale_choir_aided",
+    style: "magic",
+    skill: 0.75,
+    arena: "well",
     name: "Vale and the Hollow Choir",
     look: "vale",
     health: 180,
@@ -201,4 +277,12 @@ export const ENCOUNTERS: Record<string, EncounterDef> = {
 
 export function encounterById(id: string): EncounterDef | undefined {
   return ENCOUNTERS[id];
+}
+
+/**
+ * Adds or replaces an encounter at runtime. Civilian challenges are built on
+ * the spot from whoever was hit, so they cannot be authored in advance.
+ */
+export function registerEncounter(def: EncounterDef): void {
+  ENCOUNTERS[def.id] = def;
 }

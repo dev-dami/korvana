@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 
-import { encounterById } from "../data/encounters";
-import type { EncounterAction, EncounterDef } from "../data/encounters";
+import { DUEL_ENDED, encounterById } from "../data/encounters";
+import type { DuelLaunch, DuelResult, EncounterAction, EncounterDef } from "../data/encounters";
 import { ITEMS } from "../data/items";
 import { loreById } from "../data/lore";
 import { SPELLS } from "../data/spells";
@@ -99,7 +99,10 @@ export class BattleScene extends Phaser.Scene {
     super("battle");
   }
 
-  init(data: { encounter?: string }): void {
+  private challenger: string | undefined;
+
+  init(data: Partial<DuelLaunch>): void {
+    this.challenger = data.challenger;
     this.encounter = encounterById(data.encounter ?? "sparring") ?? encounterById("sparring")!;
     this.enemyHealth = this.encounter.health;
     this.wardTurns = 0;
@@ -667,9 +670,17 @@ export class BattleScene extends Phaser.Scene {
     }
     this.banner(victory ? "Victory" : "Yielded", victory);
 
+    const result: DuelResult = {
+      encounter: this.encounter.id,
+      challenger: this.challenger,
+      victory,
+      yielded: !victory && this.world.state.player.health > 0 && message === "You lower your wand.",
+    };
     this.time.delayedCall(victory ? 1800 : 1400, () => {
       this.scene.resume("world");
       this.scene.stop();
+      if (!victory) this.world.gameEvents.emit({ kind: "battle_lost", id: result.encounter });
+      this.game.events.emit(DUEL_ENDED, result);
     });
   }
 
